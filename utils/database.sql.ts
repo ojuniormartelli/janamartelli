@@ -1,3 +1,4 @@
+
 export const dbSetupScript = `
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -94,6 +95,14 @@ CREATE TABLE IF NOT EXISTS public.venda_itens (
 );
 
 -- RLS Policies (Basic Open for Demo Authenticated Users)
+-- Drop existing policies first to avoid "policy already exists" errors
+DROP POLICY IF EXISTS "Enable all for authenticated" ON profiles;
+DROP POLICY IF EXISTS "Enable all for authenticated" ON clients;
+DROP POLICY IF EXISTS "Enable all for authenticated" ON products;
+DROP POLICY IF EXISTS "Enable all for authenticated" ON estoque_tamanhos;
+DROP POLICY IF EXISTS "Enable all for authenticated" ON vendas;
+DROP POLICY IF EXISTS "Enable all for authenticated" ON venda_itens;
+
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE clients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
@@ -107,6 +116,16 @@ CREATE POLICY "Enable all for authenticated" ON products FOR ALL USING (auth.rol
 CREATE POLICY "Enable all for authenticated" ON estoque_tamanhos FOR ALL USING (auth.role() = 'authenticated');
 CREATE POLICY "Enable all for authenticated" ON vendas FOR ALL USING (auth.role() = 'authenticated');
 CREATE POLICY "Enable all for authenticated" ON venda_itens FOR ALL USING (auth.role() = 'authenticated');
+
+-- Function to decrement stock safely
+CREATE OR REPLACE FUNCTION decrement_stock(row_id UUID, amount INTEGER)
+RETURNS VOID AS $$
+BEGIN
+  UPDATE public.estoque_tamanhos
+  SET quantity = quantity - amount
+  WHERE id = row_id;
+END;
+$$ LANGUAGE plpgsql;
 
 -- Initial Settings
 INSERT INTO store_settings (id, store_name) VALUES (1, 'Minha Loja de Pijamas') ON CONFLICT DO NOTHING;
