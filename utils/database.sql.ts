@@ -157,6 +157,27 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- ==========================================
+-- STORAGE CONFIGURATION (UPLOAD DE IMAGENS)
+-- ==========================================
+-- 1. Create Bucket
+INSERT INTO storage.buckets (id, name, public) 
+VALUES ('store-assets', 'store-assets', true)
+ON CONFLICT (id) DO NOTHING;
+
+-- 2. Storage Policies (Allow Public Read, Allow All Insert/Update for Demo)
+DO $$
+BEGIN
+    -- Drop old policies to ensure idempotency
+    DROP POLICY IF EXISTS "Public Access Bucket" ON storage.objects;
+    DROP POLICY IF EXISTS "Authenticated Upload" ON storage.objects;
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
+CREATE POLICY "Public Access Bucket" ON storage.objects FOR SELECT USING ( bucket_id = 'store-assets' );
+CREATE POLICY "Authenticated Upload" ON storage.objects FOR INSERT WITH CHECK ( bucket_id = 'store-assets' );
+CREATE POLICY "Authenticated Update" ON storage.objects FOR UPDATE USING ( bucket_id = 'store-assets' );
+
+
 -- RLS Policies (ABERTO PARA PÚBLICO/DEMO)
 DO $$ 
 BEGIN
