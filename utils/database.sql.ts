@@ -5,6 +5,23 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- NOTA: Este script configura o banco para MODO PÚBLICO (Sem Auth Real)
 
+-- CORREÇÃO CRÍTICA: Remover restrições antigas de chave estrangeira (FK) ligadas ao auth.users
+-- Isso corrige o erro "violates foreign key constraint profiles_id_fkey"
+DO $$ 
+BEGIN
+    BEGIN
+        ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_id_fkey;
+    EXCEPTION
+        WHEN undefined_object THEN NULL;
+    END;
+    
+    BEGIN
+        ALTER TABLE public.vendas DROP CONSTRAINT IF EXISTS vendas_user_id_fkey;
+    EXCEPTION
+        WHEN undefined_object THEN NULL;
+    END;
+END $$;
+
 -- 1. Profiles
 CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
