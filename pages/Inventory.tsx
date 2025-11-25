@@ -28,6 +28,7 @@ export const Inventory: React.FC = () => {
 
   const fetchInventory = async () => {
     setLoading(true);
+    // Ordena por nome para facilitar a busca visual
     const { data: prodData } = await supabase.from('products').select('*').order('nome');
     const { data: varData } = await supabase.from('estoque_tamanhos').select('*').order('model_variant');
 
@@ -45,6 +46,28 @@ export const Inventory: React.FC = () => {
     fetchInventory();
   }, []);
 
+  // Função auxiliar para processar linha do CSV respeitando aspas
+  // Ex: "R$ 69,90" não deve ser quebrado na vírgula
+  const parseCSVLine = (text: string) => {
+    const result = [];
+    let cell = '';
+    let inQuotes = false;
+    
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        if (char === '"') {
+            inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+            result.push(cell.trim());
+            cell = '';
+        } else {
+            cell += char;
+        }
+    }
+    result.push(cell.trim());
+    return result.map(c => c.replace(/^"|"$/g, '').trim()); // Remove aspas externas
+  };
+
   const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -60,51 +83,92 @@ export const Inventory: React.FC = () => {
       let successCount = 0;
       let errorCount = 0;
 
-      // Skip header if first col is "Nome"
-      const startIndex = lines[0].toLowerCase().includes('nome') ? 1 : 0;
+      // Pula cabeçalho se a primeira linha contiver "SKU" ou "Referencia"
+      const firstLineLower = lines[0].toLowerCase();
+      const startIndex = (firstLineLower.includes('sku') || firstLineLower.includes('referencia')) ? 1 : 0;
+
+      // Cache local para evitar muitas chamadas de SELECT ao banco durante o loop
+      // Mapeia Referencia -> ID do Produto
+      const { data: existingProducts } = await supabase.from('products').select('id, modelo');
+      const productCache = new Map<string, string>(); // Referencia -> UUID
+      if (existingProducts) {
+        existingProducts.forEach(p => {
+            if(p.modelo) productCache.set(p.modelo.trim(), p.id);
+        });
+      }
 
       for (let i = startIndex; i < lines.length; i++) {
         const line = lines[i].trim();
         if (!line) continue;
 
-        // CSV: Nome, Modelo(Cor), Categoria, Tamanho, SKU, Quantidade, Custo, Venda
-        const cols = line.split(',').map(c => c.trim());
-        if (cols.length < 8) { errorCount++; continue; }
-
-        const [nome, modelo, categoria, size, sku, qtdStr, costStr, saleStr] = cols;
-
         try {
-            // 1. Check if PARENT exists (by Name only)
-            // We cache products locally to avoid too many requests in loop, but for safety in demo we fetch or use list
-            let productId = products.find(p => p.nome.toLowerCase() === nome.toLowerCase())?.id;
-
-            if (!productId) {
-                // Check DB
-                const { data: existing } = await supabase
-                    .from('products')
-                    .select('id')
-                    .ilike('nome', nome)
-                    .maybeSingle();
-                
-                if (existing) {
-                    productId = existing.id;
-                } else {
-                    const { data: newProd, error: createError } = await supabase
-                        .from('products')
-                        .insert({ 
-                            nome, 
-                            categoria, 
-                            modelo: 'Multi', // Generic reference
-                            descricao: nome 
-                        })
-                        .select('id')
-                        .single();
-                    if (createError) throw createError;
-                    productId = newProd!.id;
-                }
+            const cols = parseCSVLine(line);
+            
+            // Layout esperado baseado na sua imagem:
+            // 0: SKU
+            // 1: Referencia (Agrupador Pai)
+            // 2: Nome (Nome do Pai)
+            // 3: Modelo (Variante/Cor)
+            // 4: Categoria
+            // 5: Tamanho
+            // 6: Quantidade
+            // 7: Preco_Custo
+            // 8: Preco_Venda
+            
+            if (cols.length < 8) { 
+                console.warn(`Linha ${i+1} ignorada: colunas insuficientes`, cols);
+                errorCount++; 
+                continue; 
             }
 
-            // 2. Upsert Variation (Unique constraint: product_id + model_variant + size)
+            const sku = cols[0];
+            const referencia = cols[1]; // Usado para agrupar
+            const nome = cols[2];
+            const modeloVariante = cols[3];
+            const categoria = cols[4];
+            const tamanho = cols[5];
+            const qtdStr = cols[6];
+            const costStr = cols[7];
+            const saleStr = cols[8];
+
+            if (!referencia || !nome) {
+                errorCount++;
+                continue;
+            }
+
+            // 1. Identificar ou Criar Produto Pai (Agrupado por Referencia)
+            let productId = productCache.get(referencia);
+
+            if (!productId) {
+                // Tenta criar
+                const { data: newProd, error: createError } = await supabase
+                    .from('products')
+                    .insert({ 
+                        nome: nome, // Ex: Pijama Mônica
+                        modelo: referencia, // Ex: 12731-03 (Armazenamos a Ref no campo modelo do banco para agrupamento)
+                        categoria: categoria, 
+                        descricao: `${nome} - ${referencia}`
+                    })
+                    .select('id')
+                    .single();
+                
+                if (createError) {
+                    // Se falhar (ex: race condition), tenta buscar novamente pelo modelo/referencia
+                    const { data: retryFind } = await supabase.from('products').select('id').eq('modelo', referencia).maybeSingle();
+                    if (retryFind) {
+                        productId = retryFind.id;
+                    } else {
+                        throw createError;
+                    }
+                } else {
+                    productId = newProd!.id;
+                }
+                
+                // Atualiza cache
+                if (productId) productCache.set(referencia, productId);
+            }
+
+            // 2. Criar/Atualizar Variação (Filho)
             const quantity = parseInt(qtdStr) || 0;
             const price_cost = parseCurrencyString(costStr);
             const price_sale = parseCurrencyString(saleStr);
@@ -113,13 +177,13 @@ export const Inventory: React.FC = () => {
                 .from('estoque_tamanhos')
                 .upsert({
                     product_id: productId,
-                    model_variant: modelo, // Specific Color/Model
-                    size: size.toUpperCase(),
-                    sku,
-                    quantity,
-                    price_cost,
-                    price_sale,
-                    reference: sku
+                    model_variant: modeloVariante, // Ex: T-Shirt Marinho
+                    size: tamanho.toUpperCase(),
+                    sku: sku,
+                    quantity: quantity,
+                    price_cost: price_cost,
+                    price_sale: price_sale,
+                    reference: referencia
                 }, { onConflict: 'product_id, model_variant, size' });
 
             if (upsertError) throw upsertError;
@@ -215,7 +279,7 @@ export const Inventory: React.FC = () => {
     const { data: parent, error } = await supabase.from('products').insert({
         nome: newProduct.nome,
         categoria: newProduct.categoria,
-        modelo: 'Geral',
+        modelo: 'Geral', // Default para manual
         descricao: newProduct.nome
     }).select().single();
 
@@ -272,7 +336,8 @@ export const Inventory: React.FC = () => {
             <thead className="bg-slate-50 dark:bg-slate-700">
                 <tr>
                 <th className="p-4 w-10"></th>
-                <th className="p-4 text-slate-600 dark:text-slate-300 font-semibold">Produto / Referência</th>
+                <th className="p-4 text-slate-600 dark:text-slate-300 font-semibold">Referência</th>
+                <th className="p-4 text-slate-600 dark:text-slate-300 font-semibold">Nome</th>
                 <th className="p-4 text-slate-600 dark:text-slate-300 font-semibold">Categoria</th>
                 <th className="p-4 text-slate-600 dark:text-slate-300 font-semibold text-right">Total em Estoque</th>
                 <th className="p-4 w-10"></th>
@@ -280,7 +345,7 @@ export const Inventory: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                 {products.length === 0 && (
-                    <tr><td colSpan={5} className="p-8 text-center text-slate-400">Nenhum produto cadastrado.</td></tr>
+                    <tr><td colSpan={6} className="p-8 text-center text-slate-400">Nenhum produto cadastrado.</td></tr>
                 )}
                 {products.map(product => {
                     const totalQty = product.variations?.reduce((acc, v) => acc + v.quantity, 0) || 0;
@@ -289,6 +354,9 @@ export const Inventory: React.FC = () => {
                         <tr className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group">
                             <td className="p-4 cursor-pointer" onClick={() => setExpandedRow(expandedRow === product.id ? null : product.id)}>
                                 {expandedRow === product.id ? <ChevronDown size={18} className="text-slate-400" /> : <ChevronRight size={18} className="text-slate-400" />}
+                            </td>
+                            <td className="p-4 text-slate-600 dark:text-slate-300 font-mono text-sm cursor-pointer" onClick={() => setExpandedRow(expandedRow === product.id ? null : product.id)}>
+                                {product.modelo}
                             </td>
                             <td className="p-4 font-bold text-slate-700 dark:text-white cursor-pointer" onClick={() => setExpandedRow(expandedRow === product.id ? null : product.id)}>
                                 {product.nome}
@@ -305,7 +373,7 @@ export const Inventory: React.FC = () => {
                         </tr>
                         {expandedRow === product.id && (
                         <tr>
-                            <td colSpan={5} className="bg-slate-50 dark:bg-slate-900/30 p-4 border-b border-slate-200 dark:border-slate-700 shadow-inner">
+                            <td colSpan={6} className="bg-slate-50 dark:bg-slate-900/30 p-4 border-b border-slate-200 dark:border-slate-700 shadow-inner">
                             <div className="overflow-x-auto">
                             <table className="w-full text-sm bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700">
                                 <thead>
@@ -372,7 +440,7 @@ export const Inventory: React.FC = () => {
             <div className="p-6 overflow-y-auto flex-1 space-y-6">
                 <div className="grid grid-cols-2 gap-4">
                     <div className="col-span-2 sm:col-span-1">
-                        <label className="block text-sm font-medium mb-1 dark:text-slate-300">Nome do Produto (Referência)</label>
+                        <label className="block text-sm font-medium mb-1 dark:text-slate-300">Nome do Produto</label>
                         <input 
                             value={newProduct.nome}
                             onChange={e => setNewProduct({...newProduct, nome: e.target.value})}
