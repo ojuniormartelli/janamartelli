@@ -4,6 +4,7 @@ import { supabase } from '../supabaseClient';
 import { Product, CartItem, Client, ProductVariation, PaymentMethod } from '../types';
 import { Search, ShoppingBag, Trash, UserPlus, CheckCircle, X, Save, User, Mail, MapPin, AlertCircle } from 'lucide-react';
 import { formatCurrency, maskCPF, maskPhone } from '../utils/formatters';
+import { useLocation } from 'react-router-dom';
 
 const getSizeWeight = (size: string) => {
   const weights: Record<string, number> = {
@@ -33,6 +34,7 @@ export const POS: React.FC = () => {
   const [newClientData, setNewClientData] = useState({ full_name: '', cpf: '', phone: '', email: '', address: '' });
   
   const [transactionType, setTransactionType] = useState<'sale' | 'quote'>('sale');
+  const location = useLocation();
 
   useEffect(() => {
     loadData();
@@ -69,6 +71,39 @@ export const POS: React.FC = () => {
     if (clientData) setClients(clientData);
     if (payMethods) setPaymentMethods(payMethods);
   };
+
+  // --- HANDLE CONVERSION FROM SALES PAGE ---
+  useEffect(() => {
+      if (location.state?.conversionSale && products.length > 0) {
+          const sale = location.state.conversionSale;
+          
+          if (sale.client_id) {
+              setSelectedClient(sale.client_id);
+          }
+
+          if (sale.items) {
+              const convertedCart: CartItem[] = [];
+              sale.items.forEach((item: any) => {
+                  const variation = item.product_variation;
+                  const product = variation?.products; 
+                  
+                  // Reconstruct Cart Item logic
+                  if (variation && product) {
+                      convertedCart.push({
+                          product: product,
+                          variation: variation,
+                          quantity: item.quantity,
+                          customPrice: item.unit_price
+                      });
+                  }
+              });
+              setCart(convertedCart);
+          }
+          
+          // Clear state so refresh doesn't re-trigger
+          window.history.replaceState({}, document.title);
+      }
+  }, [location.state, products]);
 
   const addToCart = (product: Product, variation: ProductVariation) => {
     setCart(prev => {
@@ -245,9 +280,18 @@ export const POS: React.FC = () => {
                                         </div>
                                         <div className="flex flex-wrap gap-2">
                                             {variationsByModel[model].sort((a,b) => getSizeWeight(a.size) - getSizeWeight(b.size)).map(v => (
-                                                <button key={v.id} onClick={() => addToCart(product, v)} className="flex flex-col items-center justify-center bg-white dark:bg-slate-600 border border-slate-200 dark:border-slate-500 rounded p-1 min-w-[3.5rem] h-14 hover:border-primary-500 shadow-sm">
-                                                    <span className="font-bold text-sm text-slate-800 dark:text-white">{v.size}</span>
-                                                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">{formatCurrency(v.price_sale)}</span>
+                                                <button 
+                                                    key={v.id} 
+                                                    onClick={() => addToCart(product, v)} 
+                                                    className="flex flex-col items-center justify-center bg-white dark:bg-slate-600 border border-slate-200 dark:border-slate-500 rounded p-1 min-w-[3.5rem] min-h-[3.5rem] hover:border-primary-500 shadow-sm transition-all"
+                                                >
+                                                    <div className="flex items-center gap-1">
+                                                        <span className="font-bold text-sm text-slate-800 dark:text-white">{v.size}</span>
+                                                        <span className={`text-[10px] font-medium ${v.quantity < 2 ? 'text-red-500' : 'text-slate-400'}`}>
+                                                            ({v.quantity})
+                                                        </span>
+                                                    </div>
+                                                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">{formatCurrency(v.price_sale)}</span>
                                                 </button>
                                             ))}
                                         </div>

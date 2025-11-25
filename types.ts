@@ -35,6 +35,7 @@ export interface ProductVariation {
   price_sale: number;
   sku: string;
   reference: string;
+  products?: Product; // For joined queries
 }
 
 export interface PaymentMethod {
@@ -52,7 +53,7 @@ export interface Sale {
   total_value: number;
   payment_method: string; // Armazena o nome do método
   payment_status: 'paid' | 'pending' | 'refunded' | 'loss';
-  status_label: 'Venda' | 'Condicional' | 'Baixa' | 'Devolução';
+  status_label: 'Venda' | 'Condicional' | 'Baixa' | 'Devolução' | 'Convertida';
   notes?: string;
   client_id?: string;
   client?: Client;
@@ -70,6 +71,7 @@ export interface SaleItem {
   product_name?: string; // Joined view logic
   size?: string; // Joined view logic
   model_variant?: string; // Joined view logic
+  product_variation?: ProductVariation; // For joined queries
 }
 
 export interface CartItem {

@@ -105,17 +105,23 @@ CREATE TABLE IF NOT EXISTS public.vendas (
   total_value DECIMAL(10,2) NOT NULL,
   payment_method TEXT, 
   payment_status TEXT CHECK (payment_status IN ('paid', 'pending', 'refunded', 'loss')),
-  status_label TEXT CHECK (status_label IN ('Venda', 'Condicional', 'Baixa', 'Devolução')),
+  status_label TEXT,
   payment_details JSONB,
   observacoes TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- MIGRATION PARA GARANTIR COLUNA CODE (CRÍTICO)
+-- MIGRATION PARA ATUALIZAR STATUS LABEL E COLUNA CODE
 DO $$ 
 BEGIN 
     ALTER TABLE public.vendas ADD COLUMN IF NOT EXISTS code TEXT;
     ALTER TABLE public.vendas ADD COLUMN IF NOT EXISTS payment_details JSONB;
+    
+    -- Atualizar Constraint de Status para permitir 'Convertida'
+    ALTER TABLE public.vendas DROP CONSTRAINT IF EXISTS vendas_status_label_check;
+    ALTER TABLE public.vendas ADD CONSTRAINT vendas_status_label_check 
+    CHECK (status_label IN ('Venda', 'Condicional', 'Baixa', 'Devolução', 'Convertida'));
+
 EXCEPTION WHEN OTHERS THEN NULL; 
 END $$;
 
