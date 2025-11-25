@@ -25,6 +25,7 @@ export const POS: React.FC = () => {
   const [selectedMethodId, setSelectedMethodId] = useState<number | null>(null);
   const [installments, setInstallments] = useState(1);
   const [interestRate, setInterestRate] = useState(0);
+  const [applyInterest, setApplyInterest] = useState(true);
 
   // Modals
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
@@ -89,8 +90,10 @@ export const POS: React.FC = () => {
 
   const rawTotal = cart.reduce((acc, item) => acc + (item.customPrice || item.variation.price_sale) * item.quantity, 0);
   
-  // Calculate Total with Interest
-  const finalTotal = rawTotal * (1 + (interestRate / 100));
+  // Calculate Total with Interest only if applyInterest is true
+  const finalTotal = applyInterest 
+    ? rawTotal * (1 + (interestRate / 100)) 
+    : rawTotal;
 
   const handleOpenPayment = (type: 'sale' | 'quote') => {
       if (!selectedClient) {
@@ -106,6 +109,7 @@ export const POS: React.FC = () => {
   const handleMethodSelect = (id: number) => {
       setSelectedMethodId(id);
       setInstallments(1);
+      setApplyInterest(true); // Default to applying interest
       const method = paymentMethods.find(m => m.id === id);
       if (method) {
           // Check for single installment rate (default)
@@ -143,9 +147,10 @@ export const POS: React.FC = () => {
         status_label: transactionType === 'sale' ? 'Venda' : 'Condicional',
         payment_details: { 
             installments, 
-            interest_rate: interestRate, 
+            interest_rate: applyInterest ? interestRate : 0, 
             raw_value: rawTotal,
-            method_type: method?.type
+            method_type: method?.type,
+            interest_applied: applyInterest
         }
     }).select().single();
 
@@ -373,17 +378,32 @@ export const POS: React.FC = () => {
                                 </select>
                              </div>
                         )}
+
+                        {interestRate > 0 && (
+                            <div className="flex items-center gap-2 p-2 bg-slate-50 dark:bg-slate-700/50 rounded border dark:border-slate-600">
+                                <input 
+                                    type="checkbox" 
+                                    id="applyInterest"
+                                    checked={applyInterest}
+                                    onChange={(e) => setApplyInterest(e.target.checked)}
+                                    className="w-4 h-4 text-primary-600 rounded"
+                                />
+                                <label htmlFor="applyInterest" className="text-sm dark:text-slate-300 cursor-pointer select-none">
+                                    Cobrar Juros da Maquininha (Repassar ao cliente)
+                                </label>
+                            </div>
+                        )}
                     </div>
                 )}
 
                 <div className="bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg mb-6 border border-slate-100 dark:border-slate-600">
-                    {interestRate > 0 && (
+                    {interestRate > 0 && applyInterest && (
                         <div className="flex justify-between text-sm text-slate-500 mb-1">
                             <span>Subtotal</span>
                             <span>{formatCurrency(rawTotal)}</span>
                         </div>
                     )}
-                    {interestRate > 0 && (
+                    {interestRate > 0 && applyInterest && (
                         <div className="flex justify-between text-sm text-red-500 mb-2">
                             <span>Juros ({interestRate}%)</span>
                             <span>+ {formatCurrency(finalTotal - rawTotal)}</span>
@@ -392,7 +412,7 @@ export const POS: React.FC = () => {
                     <div className="text-center">
                         <p className="text-sm text-slate-500 dark:text-slate-400 uppercase tracking-wide">Valor Final</p>
                         <p className="text-4xl font-bold text-slate-800 dark:text-white mt-1">{formatCurrency(finalTotal)}</p>
-                        {installments > 1 && (
+                        {installments > 1 && applyInterest && (
                             <p className="text-sm text-primary-600 mt-1">{installments}x de {formatCurrency(finalTotal/installments)}</p>
                         )}
                     </div>
