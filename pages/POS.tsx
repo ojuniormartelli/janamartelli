@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Product, CartItem, Client, ProductVariation } from '../types';
-import { Search, ShoppingBag, Trash, UserPlus, CheckCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Search, ShoppingBag, Trash, UserPlus, CheckCircle } from 'lucide-react';
 import { formatCurrency } from '../utils/formatters';
 
 // Helper para ordenação de tamanhos
@@ -163,26 +163,23 @@ export const POS: React.FC = () => {
             <div className="flex-1 overflow-y-auto max-h-60 p-3 space-y-4 scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-600">
                 {sortedModels.map(model => {
                     const modelVars = variationsByModel[model].sort((a, b) => getSizeWeight(a.size) - getSizeWeight(b.size));
-                    const basePrice = modelVars[0].price_sale;
 
                     return (
                         <div key={model} className="space-y-2">
                             <div className="flex justify-between items-baseline border-b border-slate-200 dark:border-slate-600 pb-1">
                                 <span className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wide">{model}</span>
-                                <span className="text-xs text-green-600 dark:text-green-400 font-bold">{formatCurrency(basePrice)}</span>
+                                {/* Removido preço verde daqui conforme solicitado */}
                             </div>
                             <div className="flex flex-wrap gap-2">
                                 {modelVars.map(v => (
                                     <button 
                                         key={v.id}
                                         onClick={() => addToCart(product, v)}
-                                        className="flex flex-col items-center justify-center bg-white dark:bg-slate-600 border border-slate-200 dark:border-slate-500 rounded p-1 min-w-[3rem] hover:bg-primary-50 dark:hover:bg-primary-900/30 hover:border-primary-500 transition-colors"
+                                        className="flex flex-col items-center justify-center bg-white dark:bg-slate-600 border border-slate-200 dark:border-slate-500 rounded p-1 min-w-[3.5rem] h-14 hover:bg-primary-50 dark:hover:bg-primary-900/30 hover:border-primary-500 transition-colors shadow-sm"
                                         title={`SKU: ${v.sku} | Estoque: ${v.quantity}`}
                                     >
                                         <span className="font-bold text-sm text-slate-800 dark:text-white">{v.size}</span>
-                                        {v.price_sale !== basePrice && (
-                                            <span className="text-[10px] text-slate-400">{formatCurrency(v.price_sale)}</span>
-                                        )}
+                                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">{formatCurrency(v.price_sale)}</span>
                                     </button>
                                 ))}
                             </div>
@@ -296,7 +293,7 @@ export const POS: React.FC = () => {
         </div>
       </div>
 
-      {/* Payment Modal (Reused Logic) */}
+      {/* Payment Modal */}
       {isPaymentModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md p-6 scale-100 animate-in zoom-in-95 duration-200">
