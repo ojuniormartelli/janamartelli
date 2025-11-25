@@ -7,6 +7,7 @@ import { Inventory } from './pages/Inventory';
 import { POS } from './pages/POS';
 import { Dashboard } from './pages/Dashboard';
 import { Settings } from './pages/Settings';
+import { Clients } from './pages/Clients';
 
 // Componente definido fora para evitar recriação a cada render
 const Placeholder = ({ title }: { title: string }) => (
@@ -41,7 +42,7 @@ const AppRoutes = () => {
             <Route path="/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
             <Route path="/pos" element={<ProtectedRoute><POS /></ProtectedRoute>} />
             <Route path="/sales" element={<ProtectedRoute><Placeholder title="Histórico de Vendas" /></ProtectedRoute>} />
-            <Route path="/clients" element={<ProtectedRoute><Placeholder title="Gestão de Clientes" /></ProtectedRoute>} />
+            <Route path="/clients" element={<ProtectedRoute><Clients /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             
             <Route path="*" element={<Navigate to="/" replace />} />

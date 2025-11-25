@@ -2,8 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Product, CartItem, Client, ProductVariation } from '../types';
-import { Search, ShoppingBag, Trash, UserPlus, CheckCircle } from 'lucide-react';
-import { formatCurrency } from '../utils/formatters';
+import { Search, ShoppingBag, Trash, UserPlus, CheckCircle, X, Save, User, Mail, MapPin } from 'lucide-react';
+import { formatCurrency, maskCPF, maskPhone } from '../utils/formatters';
 
 // Helper para ordenação de tamanhos
 const getSizeWeight = (size: string) => {
@@ -22,6 +22,12 @@ export const POS: React.FC = () => {
   const [selectedClient, setSelectedClient] = useState<string>('');
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   
+  // New Client Modal State
+  const [isNewClientModalOpen, setIsNewClientModalOpen] = useState(false);
+  const [newClientData, setNewClientData] = useState({
+      full_name: '', cpf: '', phone: '', email: '', address: ''
+  });
+  
   // Payment State
   const [paymentMethod, setPaymentMethod] = useState('credit');
   const [installments, setInstallments] = useState(1);
@@ -35,7 +41,7 @@ export const POS: React.FC = () => {
     // Fetch active products with variations
     const { data: prodData } = await supabase.from('products').select('*').eq('active', true);
     const { data: varData } = await supabase.from('estoque_tamanhos').select('*').gt('quantity', 0);
-    const { data: clientData } = await supabase.from('clients').select('id, full_name').order('full_name');
+    const { data: clientData } = await supabase.from('clients').select('*').order('full_name');
     
     if (prodData && varData) {
       // 1. Merge Variations into Parents
@@ -133,6 +139,21 @@ export const POS: React.FC = () => {
     loadData(); // Refresh stock
   };
 
+  const handleQuickSaveClient = async () => {
+      if (!newClientData.full_name) return alert("Nome é obrigatório");
+      
+      const { data, error } = await supabase.from('clients').insert([newClientData]).select().single();
+      
+      if (error) {
+          alert("Erro ao cadastrar cliente.");
+      } else if (data) {
+          setClients(prev => [...prev, data].sort((a,b) => a.full_name.localeCompare(b.full_name)));
+          setSelectedClient(data.id);
+          setIsNewClientModalOpen(false);
+          setNewClientData({ full_name: '', cpf: '', phone: '', email: '', address: '' });
+      }
+  };
+
   const filteredProducts = products.filter(p => 
     p.nome.toLowerCase().includes(search.toLowerCase()) || 
     p.variations?.some(v => v.model_variant.toLowerCase().includes(search.toLowerCase()) || v.sku.toLowerCase().includes(search.toLowerCase()))
@@ -168,7 +189,6 @@ export const POS: React.FC = () => {
                         <div key={model} className="space-y-2">
                             <div className="flex justify-between items-baseline border-b border-slate-200 dark:border-slate-600 pb-1">
                                 <span className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wide">{model}</span>
-                                {/* Removido preço verde daqui conforme solicitado */}
                             </div>
                             <div className="flex flex-wrap gap-2">
                                 {modelVars.map(v => (
@@ -257,16 +277,25 @@ export const POS: React.FC = () => {
         </div>
 
         <div className="p-4 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-200 dark:border-slate-700 space-y-4">
-            <div className="relative">
-                <UserPlus className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                <select 
-                    className="w-full pl-9 p-2 text-sm rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white"
-                    value={selectedClient}
-                    onChange={e => setSelectedClient(e.target.value)}
+            <div className="relative flex gap-2">
+                <div className="relative flex-1">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                    <select 
+                        className="w-full pl-9 p-2 text-sm rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white"
+                        value={selectedClient}
+                        onChange={e => setSelectedClient(e.target.value)}
+                    >
+                        <option value="">Cliente Não Identificado</option>
+                        {clients.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
+                    </select>
+                </div>
+                <button 
+                    onClick={() => setIsNewClientModalOpen(true)}
+                    className="p-2 bg-primary-100 text-primary-600 rounded hover:bg-primary-200 transition-colors"
+                    title="Cadastro Rápido de Cliente"
                 >
-                    <option value="">Cliente Não Identificado</option>
-                    {clients.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
-                </select>
+                    <UserPlus size={20} />
+                </button>
             </div>
 
             <div className="flex justify-between items-end">
@@ -292,6 +321,50 @@ export const POS: React.FC = () => {
             </div>
         </div>
       </div>
+
+      {/* New Client Modal (Quick Add) */}
+      {isNewClientModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95">
+                <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
+                    <h3 className="font-bold dark:text-white flex items-center"><UserPlus size={18} className="mr-2"/> Cadastro Rápido</h3>
+                    <button onClick={() => setIsNewClientModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                </div>
+                <div className="p-4 space-y-3">
+                    <input 
+                        className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                        placeholder="Nome Completo *"
+                        value={newClientData.full_name} onChange={e => setNewClientData({...newClientData, full_name: e.target.value})}
+                    />
+                    <div className="grid grid-cols-2 gap-3">
+                        <input 
+                            className="p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                            placeholder="CPF"
+                            value={newClientData.cpf} onChange={e => setNewClientData({...newClientData, cpf: maskCPF(e.target.value)})}
+                        />
+                        <input 
+                            className="p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                            placeholder="Telefone"
+                            value={newClientData.phone} onChange={e => setNewClientData({...newClientData, phone: maskPhone(e.target.value)})}
+                        />
+                    </div>
+                    <input 
+                        className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                        placeholder="Email"
+                        value={newClientData.email} onChange={e => setNewClientData({...newClientData, email: e.target.value})}
+                    />
+                    <textarea 
+                        className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white h-20 resize-none"
+                        placeholder="Endereço Completo"
+                        value={newClientData.address} onChange={e => setNewClientData({...newClientData, address: e.target.value})}
+                    />
+                    <button onClick={handleQuickSaveClient} className="w-full py-2 bg-primary-600 text-white rounded font-bold hover:bg-primary-700 mt-2">
+                        Salvar e Selecionar
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
 
       {/* Payment Modal */}
       {isPaymentModalOpen && (
