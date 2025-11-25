@@ -25,31 +25,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const initializeAuth = async () => {
       try {
-        // Tenta obter a sessão. Se a URL do Supabase for inválida, isso pode falhar.
         const { data, error } = await supabase.auth.getSession();
         
-        if (error) throw error;
+        // Se houver erro (ex: tabela auth não acessível ou url errada), apenas loga e segue
+        if (error) {
+            console.warn("Sessão não pôde ser recuperada:", error.message);
+        }
 
         if (mounted) {
-          setSession(data.session);
-          setUser(data.session?.user ?? null);
+          setSession(data?.session ?? null);
+          setUser(data?.session?.user ?? null);
           
-          if (data.session?.user) {
+          if (data?.session?.user) {
             await fetchProfile(data.session.user.id);
           } else {
             setLoading(false);
           }
         }
       } catch (err) {
-        console.error("Erro ao inicializar autenticação (possível falta de configuração do Supabase):", err);
-        // CRÍTICO: Garantir que o loading termine mesmo com erro, para mostrar a tela de login
+        console.error("Erro crítico na inicialização da Auth:", err);
         if (mounted) setLoading(false);
       }
     };
 
     initializeAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!mounted) return;
       
       setSession(session);
@@ -65,43 +66,53 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return () => {
       mounted = false;
-      subscription.unsubscribe();
+      if (data && data.subscription) {
+          data.subscription.unsubscribe();
+      }
     };
   }, []);
 
   const fetchProfile = async (userId: string) => {
     try {
+      // Tenta buscar o perfil. Se a tabela não existir, vai cair no catch ou retornar erro.
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single();
       
-      if (error && error.code === 'PGRST116') {
-        // Self-healing: Create profile if missing
-        const { data: userData } = await supabase.auth.getUser();
-        if(userData.user?.email) {
-            const username = userData.user.email.split('@')[0];
-            const { data: newProfile } = await supabase.from('profiles').insert({
-                id: userId,
-                username: username,
-                role: 'employee'
-            }).select().single();
-            setProfile(newProfile);
-        }
+      if (error) {
+          // Se o erro for "Row not found" (PGRST116), tenta criar. 
+          // Se for erro de tabela inexistente (42P01), ignoramos para não travar a UI
+          if (error.code === 'PGRST116') {
+            const { data: userData } = await supabase.auth.getUser();
+            if(userData.user?.email) {
+                const username = userData.user.email.split('@')[0];
+                try {
+                    const { data: newProfile } = await supabase.from('profiles').insert({
+                        id: userId,
+                        username: username,
+                        role: 'employee'
+                    }).select().single();
+                    setProfile(newProfile);
+                } catch (insertError) {
+                    console.error("Erro ao criar perfil automático:", insertError);
+                }
+            }
+          }
       } else if (data) {
         setProfile(data);
       }
     } catch (err) {
       console.error("Erro ao buscar perfil:", err);
     } finally {
+      // Sempre finaliza o loading para não travar na tela branca
       setLoading(false);
     }
   };
 
   const signIn = async (username: string, password: string) => {
     try {
-      // Domain conversion logic
       const email = `${username.toLowerCase().trim()}@app.com`;
       const { data, error } = await supabase.auth.signInWithPassword({
         email,

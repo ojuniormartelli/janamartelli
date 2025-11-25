@@ -22,7 +22,7 @@ export const Login: React.FC = () => {
 
     const { error } = await signIn(username, password);
     if (error) {
-      setError('Falha ao entrar. Verifique suas credenciais ou a conexão com o banco.');
+      setError('Falha ao entrar. Verifique credenciais ou rode o script SQL.');
     }
     setLoading(false);
   };
@@ -48,7 +48,9 @@ export const Login: React.FC = () => {
                     </button>
                 </div>
                 <div className="p-4 bg-slate-50 dark:bg-slate-900 overflow-auto flex-1">
-                    <p className="text-sm text-slate-500 mb-2">Rode este script no Editor SQL do seu projeto Supabase para criar as tabelas necessárias.</p>
+                    <p className="text-sm text-slate-500 mb-2">
+                        Copie este script e rode no Editor SQL do Supabase para criar as tabelas.
+                    </p>
                     <pre className="text-xs text-slate-600 dark:text-green-400 font-mono whitespace-pre-wrap select-all">
                         {dbSetupScript}
                     </pre>
@@ -115,6 +117,7 @@ export const Login: React.FC = () => {
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                title={showPassword ? "Ocultar senha" : "Ver senha"}
               >
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
