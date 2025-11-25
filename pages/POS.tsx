@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Product, CartItem, Client, ProductVariation } from '../types';
@@ -77,7 +78,7 @@ export const POS: React.FC = () => {
         return;
     }
 
-    // 2. Create Sale Items and Deduct Stock
+    // 2. Create Sale Items
     const saleItems = cart.map(item => ({
         sale_id: sale.id,
         product_variation_id: item.variation.id,
@@ -90,11 +91,6 @@ export const POS: React.FC = () => {
 
     // 3. Update Stock
     for (const item of cart) {
-        await supabase.rpc('decrement_stock', { 
-            row_id: item.variation.id, 
-            amount: item.quantity 
-        });
-        // Note: For real implementation, creating a PG function `decrement_stock` is safer than direct update
         // Fallback direct update for this demo:
         const { data: currentVar } = await supabase.from('estoque_tamanhos').select('quantity').eq('id', item.variation.id).single();
         if(currentVar) {
@@ -110,7 +106,7 @@ export const POS: React.FC = () => {
 
   const filteredProducts = products.filter(p => 
     p.nome.toLowerCase().includes(search.toLowerCase()) || 
-    p.modelo.toLowerCase().includes(search.toLowerCase())
+    p.variations?.some(v => v.model_variant.toLowerCase().includes(search.toLowerCase()) || v.sku.toLowerCase().includes(search.toLowerCase()))
   );
 
   return (
@@ -122,28 +118,34 @@ export const POS: React.FC = () => {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
             <input 
               className="w-full pl-10 pr-4 py-2 bg-slate-100 dark:bg-slate-700 rounded-lg dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-              placeholder="Buscar por nome, modelo..."
+              placeholder="Buscar por nome, modelo, sku..."
               value={search}
               onChange={e => setSearch(e.target.value)}
             />
           </div>
         </div>
         
-        <div className="flex-1 overflow-y-auto p-4 grid grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="flex-1 overflow-y-auto p-4 grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filteredProducts.map(product => (
-            <div key={product.id} className="bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg border border-slate-100 dark:border-slate-700 hover:shadow-md transition-shadow">
-              <h3 className="font-bold text-slate-800 dark:text-white truncate">{product.nome}</h3>
-              <p className="text-sm text-slate-500 mb-3">{product.modelo}</p>
+            <div key={product.id} className="bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg border border-slate-100 dark:border-slate-700 hover:shadow-md transition-shadow flex flex-col">
+              <h3 className="font-bold text-slate-800 dark:text-white truncate" title={product.nome}>{product.nome}</h3>
+              <p className="text-xs text-slate-500 mb-3">{product.categoria}</p>
               
-              <div className="flex flex-wrap gap-2">
+              <div className="flex-1 overflow-y-auto max-h-40 space-y-2">
                 {product.variations?.map(v => (
                   <button 
                     key={v.id}
                     onClick={() => addToCart(product, v)}
-                    className="text-sm px-3 py-1 bg-white dark:bg-slate-600 border border-slate-200 dark:border-slate-500 rounded hover:bg-primary-50 dark:hover:bg-primary-900/30 hover:border-primary-500 transition-colors"
+                    className="w-full text-left p-2 bg-white dark:bg-slate-600 border border-slate-200 dark:border-slate-500 rounded hover:bg-primary-50 dark:hover:bg-primary-900/30 hover:border-primary-500 transition-colors group"
                   >
-                    <span className="font-bold mr-1">{v.size}</span>
-                    <span className="text-slate-500 dark:text-slate-300 text-xs">{formatCurrency(v.price_sale)}</span>
+                    <div className="flex justify-between items-center mb-1">
+                        <span className="font-bold text-sm dark:text-slate-200">{v.model_variant}</span>
+                        <span className="text-xs font-mono bg-slate-100 dark:bg-slate-500 px-1 rounded">{v.size}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-400">{v.sku}</span>
+                        <span className="font-bold text-green-600 dark:text-green-400">{formatCurrency(v.price_sale)}</span>
+                    </div>
                   </button>
                 ))}
               </div>
@@ -166,10 +168,13 @@ export const POS: React.FC = () => {
                 <div className="text-center text-slate-400 mt-10">Carrinho vazio</div>
             )}
             {cart.map((item, idx) => (
-                <div key={`${item.variation.id}-${idx}`} className="flex justify-between items-start">
+                <div key={`${item.variation.id}-${idx}`} className="flex justify-between items-start border-b border-slate-100 dark:border-slate-700 pb-2">
                     <div className="flex-1">
                         <p className="font-medium text-slate-800 dark:text-white text-sm">{item.product.nome}</p>
-                        <p className="text-xs text-slate-500">Tam: {item.variation.size} | Un: {formatCurrency(item.customPrice || item.variation.price_sale)}</p>
+                        <p className="text-xs text-slate-500">
+                            {item.variation.model_variant} | Tam: {item.variation.size}
+                        </p>
+                        <p className="text-xs font-bold text-primary-600">{formatCurrency(item.customPrice || item.variation.price_sale)}</p>
                     </div>
                     <div className="flex items-center gap-3">
                         <span className="font-mono font-bold text-slate-700 dark:text-slate-300">x{item.quantity}</span>
@@ -215,7 +220,7 @@ export const POS: React.FC = () => {
         </div>
       </div>
 
-      {/* Payment Modal */}
+      {/* Payment Modal (Reused Logic) */}
       {isPaymentModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
             <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-md p-6">

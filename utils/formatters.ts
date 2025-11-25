@@ -1,8 +1,17 @@
+
 export const formatCurrency = (value: number) => {
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
     currency: 'BRL',
   }).format(value);
+};
+
+export const parseCurrencyString = (value: string): number => {
+  if (!value) return 0;
+  // Remove currency symbol, spaces, and convert comma to dot
+  const cleanStr = value.replace(/[R$\s]/g, '').replace(/\./g, '').replace(',', '.');
+  const num = parseFloat(cleanStr);
+  return isNaN(num) ? 0 : num;
 };
 
 export const maskCPF = (value: string) => {

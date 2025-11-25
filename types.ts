@@ -1,3 +1,4 @@
+
 export interface Profile {
   id: string;
   username: string;
@@ -17,7 +18,7 @@ export interface Client {
 export interface Product {
   id: string;
   nome: string;
-  modelo: string;
+  modelo?: string; // Mantido para compatibilidade, mas usado como referência geral
   descricao: string;
   categoria: string;
   active: boolean;
@@ -27,6 +28,7 @@ export interface Product {
 export interface ProductVariation {
   id: string;
   product_id: string;
+  model_variant: string; // Nova coluna: Cor/Estampa específica
   size: string;
   quantity: number;
   price_cost: number;
@@ -56,6 +58,7 @@ export interface SaleItem {
   unit_price: number;
   product_name?: string; // Joined view
   size?: string; // Joined view
+  model_variant?: string; // Joined view
 }
 
 export interface CartItem {
