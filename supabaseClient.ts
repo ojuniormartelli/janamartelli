@@ -1,19 +1,18 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Função auxiliar para obter variáveis de ambiente de forma segura em diferentes ambientes (Vite, Webpack, etc)
+// Função auxiliar para obter variáveis de ambiente de forma segura
 const getEnv = (key: string) => {
   try {
     // Tenta import.meta.env (Vite standard)
-    // Fix: Cast import.meta to any to avoid "Property 'env' does not exist on type 'ImportMeta'"
     if (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env[key]) {
       return (import.meta as any).env[key];
     }
   } catch (e) {
-    // Ignora erros de acesso ao import.meta
+    // Ignora erros de acesso
   }
 
   try {
-    // Fallback para process.env (caso o ambiente suporte)
+    // Fallback para process.env
     if (typeof process !== 'undefined' && process.env && process.env[key]) {
       return process.env[key];
     }
@@ -24,10 +23,12 @@ const getEnv = (key: string) => {
   return '';
 };
 
-// Valores de fallback seguros
-const SUPABASE_URL = getEnv('VITE_SUPABASE_URL') || 'https://placeholder.supabase.co';
-const SUPABASE_ANON_KEY = getEnv('VITE_SUPABASE_ANON_KEY') || 'placeholder';
+// Define URLs de fallback válidas para evitar crash no createClient
+const envUrl = getEnv('VITE_SUPABASE_URL');
+const envKey = getEnv('VITE_SUPABASE_ANON_KEY');
 
-// Cria o cliente. Se as URLs forem placeholders, chamadas de rede falharão, 
-// mas o AuthContext agora tratará isso sem travar a tela branca.
+const SUPABASE_URL = envUrl && envUrl.length > 0 ? envUrl : 'https://placeholder.supabase.co';
+const SUPABASE_ANON_KEY = envKey && envKey.length > 0 ? envKey : 'placeholder';
+
+// Inicializa o cliente com valores garantidos
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
