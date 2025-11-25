@@ -21,24 +21,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) fetchProfile(session.user.id);
-      else setLoading(false);
-    });
+    let mounted = true;
+
+    const initializeAuth = async () => {
+      try {
+        // Tenta obter a sessão. Se a URL do Supabase for inválida, isso pode falhar.
+        const { data, error } = await supabase.auth.getSession();
+        
+        if (error) throw error;
+
+        if (mounted) {
+          setSession(data.session);
+          setUser(data.session?.user ?? null);
+          
+          if (data.session?.user) {
+            await fetchProfile(data.session.user.id);
+          } else {
+            setLoading(false);
+          }
+        }
+      } catch (err) {
+        console.error("Erro ao inicializar autenticação (possível falta de configuração do Supabase):", err);
+        // CRÍTICO: Garantir que o loading termine mesmo com erro, para mostrar a tela de login
+        if (mounted) setLoading(false);
+      }
+    };
+
+    initializeAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return;
+      
       setSession(session);
       setUser(session?.user ?? null);
-      if (session?.user) fetchProfile(session.user.id);
-      else {
+      
+      if (session?.user) {
+        fetchProfile(session.user.id);
+      } else {
         setProfile(null);
         setLoading(false);
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const fetchProfile = async (userId: string) => {
@@ -65,24 +93,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setProfile(data);
       }
     } catch (err) {
-      console.error(err);
+      console.error("Erro ao buscar perfil:", err);
     } finally {
       setLoading(false);
     }
   };
 
   const signIn = async (username: string, password: string) => {
-    // Domain conversion logic
-    const email = `${username.toLowerCase().trim()}@app.com`;
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    return { error };
+    try {
+      // Domain conversion logic
+      const email = `${username.toLowerCase().trim()}@app.com`;
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      return { error };
+    } catch (err) {
+      console.error("Erro no login:", err);
+      return { error: err };
+    }
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error("Erro ao sair:", error);
+    }
   };
 
   return (
