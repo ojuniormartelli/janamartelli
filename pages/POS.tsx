@@ -2,8 +2,17 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Product, CartItem, Client, ProductVariation } from '../types';
-import { Search, ShoppingBag, Trash, CreditCard, UserPlus, CheckCircle } from 'lucide-react';
+import { Search, ShoppingBag, Trash, UserPlus, CheckCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { formatCurrency } from '../utils/formatters';
+
+// Helper para ordenação de tamanhos
+const getSizeWeight = (size: string) => {
+  const weights: Record<string, number> = {
+    'RN': 0, 'PB': 1, '1': 2, '2': 3, '3': 4, '4': 5, '6': 6, '8': 7, '10': 8, '12': 9, '14': 10, '16': 11,
+    'PP': 20, 'P': 21, 'M': 22, 'G': 23, 'GG': 24, 'XG': 25, 'XXG': 26, 'U': 100
+  };
+  return weights[size.toUpperCase()] || 99;
+};
 
 export const POS: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
@@ -26,14 +35,35 @@ export const POS: React.FC = () => {
     // Fetch active products with variations
     const { data: prodData } = await supabase.from('products').select('*').eq('active', true);
     const { data: varData } = await supabase.from('estoque_tamanhos').select('*').gt('quantity', 0);
-    const { data: clientData } = await supabase.from('clients').select('id, full_name');
+    const { data: clientData } = await supabase.from('clients').select('id, full_name').order('full_name');
     
     if (prodData && varData) {
-      const merged = prodData.map(p => ({
+      // 1. Merge Variations into Parents
+      const rawProducts = prodData.map(p => ({
         ...p,
         variations: varData.filter(v => v.product_id === p.id)
       })).filter(p => p.variations && p.variations.length > 0);
-      setProducts(merged);
+
+      // 2. Client-Side Grouping by NAME (Unify products with exact same name)
+      const groupedMap = new Map<string, Product>();
+
+      rawProducts.forEach(p => {
+        const normalizedName = p.nome.trim();
+        if (groupedMap.has(normalizedName)) {
+            const existing = groupedMap.get(normalizedName)!;
+            // Merge variations
+            existing.variations = [...(existing.variations || []), ...(p.variations || [])];
+        } else {
+            groupedMap.set(normalizedName, { ...p });
+        }
+      });
+
+      // 3. Convert back to array and Sort Alphabetically
+      const unifiedProducts = Array.from(groupedMap.values()).sort((a, b) => 
+        a.nome.localeCompare(b.nome)
+      );
+
+      setProducts(unifiedProducts);
     }
     if (clientData) setClients(clientData);
   };
@@ -91,7 +121,6 @@ export const POS: React.FC = () => {
 
     // 3. Update Stock
     for (const item of cart) {
-        // Fallback direct update for this demo:
         const { data: currentVar } = await supabase.from('estoque_tamanhos').select('quantity').eq('id', item.variation.id).single();
         if(currentVar) {
             await supabase.from('estoque_tamanhos').update({ quantity: currentVar.quantity - item.quantity}).eq('id', item.variation.id);
@@ -109,15 +138,71 @@ export const POS: React.FC = () => {
     p.variations?.some(v => v.model_variant.toLowerCase().includes(search.toLowerCase()) || v.sku.toLowerCase().includes(search.toLowerCase()))
   );
 
+  // Helper to render grouped variations inside a card
+  const renderProductCard = (product: Product) => {
+    if (!product.variations) return null;
+
+    // Group variations by Model/Color
+    const variationsByModel: Record<string, ProductVariation[]> = {};
+    product.variations.forEach(v => {
+        const key = v.model_variant || 'Padrão';
+        if (!variationsByModel[key]) variationsByModel[key] = [];
+        variationsByModel[key].push(v);
+    });
+
+    // Sort Models Alphabetically
+    const sortedModels = Object.keys(variationsByModel).sort();
+
+    return (
+        <div key={product.id} className="bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-700 hover:shadow-lg transition-all flex flex-col overflow-hidden">
+            <div className="p-3 bg-white dark:bg-slate-800 border-b border-slate-100 dark:border-slate-600">
+                <h3 className="font-bold text-slate-800 dark:text-white leading-tight" title={product.nome}>{product.nome}</h3>
+                <p className="text-xs text-slate-500 mt-1">{product.categoria}</p>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto max-h-60 p-3 space-y-4 scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-600">
+                {sortedModels.map(model => {
+                    const modelVars = variationsByModel[model].sort((a, b) => getSizeWeight(a.size) - getSizeWeight(b.size));
+                    const basePrice = modelVars[0].price_sale;
+
+                    return (
+                        <div key={model} className="space-y-2">
+                            <div className="flex justify-between items-baseline border-b border-slate-200 dark:border-slate-600 pb-1">
+                                <span className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wide">{model}</span>
+                                <span className="text-xs text-green-600 dark:text-green-400 font-bold">{formatCurrency(basePrice)}</span>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {modelVars.map(v => (
+                                    <button 
+                                        key={v.id}
+                                        onClick={() => addToCart(product, v)}
+                                        className="flex flex-col items-center justify-center bg-white dark:bg-slate-600 border border-slate-200 dark:border-slate-500 rounded p-1 min-w-[3rem] hover:bg-primary-50 dark:hover:bg-primary-900/30 hover:border-primary-500 transition-colors"
+                                        title={`SKU: ${v.sku} | Estoque: ${v.quantity}`}
+                                    >
+                                        <span className="font-bold text-sm text-slate-800 dark:text-white">{v.size}</span>
+                                        {v.price_sale !== basePrice && (
+                                            <span className="text-[10px] text-slate-400">{formatCurrency(v.price_sale)}</span>
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+  };
+
   return (
     <div className="flex h-[calc(100vh-6rem)] gap-4">
       {/* Product Catalog */}
       <div className="flex-1 flex flex-col bg-white dark:bg-slate-800 rounded-lg shadow overflow-hidden">
-        <div className="p-4 border-b border-slate-200 dark:border-slate-700">
+        <div className="p-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
             <input 
-              className="w-full pl-10 pr-4 py-2 bg-slate-100 dark:bg-slate-700 rounded-lg dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
               placeholder="Buscar por nome, modelo, sku..."
               value={search}
               onChange={e => setSearch(e.target.value)}
@@ -125,37 +210,19 @@ export const POS: React.FC = () => {
           </div>
         </div>
         
-        <div className="flex-1 overflow-y-auto p-4 grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {filteredProducts.map(product => (
-            <div key={product.id} className="bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg border border-slate-100 dark:border-slate-700 hover:shadow-md transition-shadow flex flex-col">
-              <h3 className="font-bold text-slate-800 dark:text-white truncate" title={product.nome}>{product.nome}</h3>
-              <p className="text-xs text-slate-500 mb-3">{product.categoria}</p>
-              
-              <div className="flex-1 overflow-y-auto max-h-40 space-y-2">
-                {product.variations?.map(v => (
-                  <button 
-                    key={v.id}
-                    onClick={() => addToCart(product, v)}
-                    className="w-full text-left p-2 bg-white dark:bg-slate-600 border border-slate-200 dark:border-slate-500 rounded hover:bg-primary-50 dark:hover:bg-primary-900/30 hover:border-primary-500 transition-colors group"
-                  >
-                    <div className="flex justify-between items-center mb-1">
-                        <span className="font-bold text-sm dark:text-slate-200">{v.model_variant}</span>
-                        <span className="text-xs font-mono bg-slate-100 dark:bg-slate-500 px-1 rounded">{v.size}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-xs">
-                        <span className="text-slate-400">{v.sku}</span>
-                        <span className="font-bold text-green-600 dark:text-green-400">{formatCurrency(v.price_sale)}</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
+        <div className="flex-1 overflow-y-auto p-4 bg-slate-100 dark:bg-slate-900/20">
+            {filteredProducts.length === 0 ? (
+                <div className="text-center text-slate-400 mt-20">Nenhum produto encontrado.</div>
+            ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
+                    {filteredProducts.map(renderProductCard)}
+                </div>
+            )}
         </div>
       </div>
 
       {/* Cart Sidebar */}
-      <div className="w-96 bg-white dark:bg-slate-800 rounded-lg shadow flex flex-col">
+      <div className="w-96 bg-white dark:bg-slate-800 rounded-lg shadow flex flex-col border-l border-slate-200 dark:border-slate-700">
         <div className="p-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex justify-between items-center">
             <h2 className="font-bold text-lg dark:text-white flex items-center">
                 <ShoppingBag className="mr-2" size={20}/> Carrinho
@@ -165,20 +232,26 @@ export const POS: React.FC = () => {
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {cart.length === 0 && (
-                <div className="text-center text-slate-400 mt-10">Carrinho vazio</div>
+                <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                    <ShoppingBag size={48} className="mb-2 opacity-20" />
+                    <p>Carrinho vazio</p>
+                    <p className="text-xs">Selecione produtos ao lado</p>
+                </div>
             )}
             {cart.map((item, idx) => (
-                <div key={`${item.variation.id}-${idx}`} className="flex justify-between items-start border-b border-slate-100 dark:border-slate-700 pb-2">
+                <div key={`${item.variation.id}-${idx}`} className="flex justify-between items-start border-b border-slate-100 dark:border-slate-700 pb-2 animate-in fade-in slide-in-from-right-4 duration-300">
                     <div className="flex-1">
-                        <p className="font-medium text-slate-800 dark:text-white text-sm">{item.product.nome}</p>
+                        <p className="font-medium text-slate-800 dark:text-white text-sm line-clamp-1">{item.product.nome}</p>
                         <p className="text-xs text-slate-500">
-                            {item.variation.model_variant} | Tam: {item.variation.size}
+                            {item.variation.model_variant} | Tam: <b>{item.variation.size}</b>
                         </p>
-                        <p className="text-xs font-bold text-primary-600">{formatCurrency(item.customPrice || item.variation.price_sale)}</p>
+                        <p className="text-xs font-bold text-primary-600 mt-1">{formatCurrency(item.customPrice || item.variation.price_sale)}</p>
                     </div>
                     <div className="flex items-center gap-3">
-                        <span className="font-mono font-bold text-slate-700 dark:text-slate-300">x{item.quantity}</span>
-                        <button onClick={() => removeFromCart(item.variation.id)} className="text-red-400 hover:text-red-600">
+                        <div className="flex items-center bg-slate-100 dark:bg-slate-700 rounded px-2">
+                             <span className="font-mono font-bold text-slate-700 dark:text-slate-300 text-sm">x{item.quantity}</span>
+                        </div>
+                        <button onClick={() => removeFromCart(item.variation.id)} className="text-red-400 hover:text-red-600 p-1 hover:bg-red-50 rounded transition-colors">
                             <Trash size={16} />
                         </button>
                     </div>
@@ -187,34 +260,37 @@ export const POS: React.FC = () => {
         </div>
 
         <div className="p-4 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-200 dark:border-slate-700 space-y-4">
-            <select 
-                className="w-full p-2 rounded border dark:bg-slate-700 dark:border-slate-600 dark:text-white"
-                value={selectedClient}
-                onChange={e => setSelectedClient(e.target.value)}
-            >
-                <option value="">Cliente Não Identificado</option>
-                {clients.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
-            </select>
-
-            <div className="flex justify-between items-end">
-                <span className="text-slate-500 dark:text-slate-400">Total</span>
-                <span className="text-2xl font-bold text-slate-800 dark:text-white">{formatCurrency(total)}</span>
+            <div className="relative">
+                <UserPlus className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                <select 
+                    className="w-full pl-9 p-2 text-sm rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white"
+                    value={selectedClient}
+                    onChange={e => setSelectedClient(e.target.value)}
+                >
+                    <option value="">Cliente Não Identificado</option>
+                    {clients.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
+                </select>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="flex justify-between items-end">
+                <span className="text-slate-500 dark:text-slate-400 font-medium">Total a Pagar</span>
+                <span className="text-3xl font-bold text-slate-800 dark:text-white tracking-tight">{formatCurrency(total)}</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
                 <button 
                     onClick={() => { setTransactionType('quote'); setIsPaymentModalOpen(true); }}
                     disabled={cart.length === 0}
-                    className="py-3 bg-amber-100 text-amber-700 hover:bg-amber-200 rounded-lg font-bold transition-colors disabled:opacity-50"
+                    className="py-3 bg-amber-100 text-amber-800 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-200 border border-amber-200 dark:border-amber-800 rounded-lg font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                 >
                     Condicional
                 </button>
                 <button 
                     onClick={() => { setTransactionType('sale'); setIsPaymentModalOpen(true); }}
                     disabled={cart.length === 0}
-                    className="py-3 bg-green-600 text-white hover:bg-green-700 rounded-lg font-bold transition-colors disabled:opacity-50"
+                    className="py-3 bg-primary-600 text-white hover:bg-primary-700 shadow-lg shadow-primary-500/30 rounded-lg font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none text-sm"
                 >
-                    Finalizar
+                    Finalizar Venda
                 </button>
             </div>
         </div>
@@ -222,35 +298,36 @@ export const POS: React.FC = () => {
 
       {/* Payment Modal (Reused Logic) */}
       {isPaymentModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-md p-6">
-                <h3 className="text-xl font-bold mb-4 dark:text-white">
-                    {transactionType === 'sale' ? 'Pagamento' : 'Confirmar Condicional'}
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md p-6 scale-100 animate-in zoom-in-95 duration-200">
+                <h3 className="text-xl font-bold mb-4 dark:text-white flex items-center">
+                    <CheckCircle className="mr-2 text-primary-600" />
+                    {transactionType === 'sale' ? 'Confirmar Pagamento' : 'Gerar Condicional'}
                 </h3>
                 
                 {transactionType === 'sale' && (
                     <div className="space-y-4 mb-6">
                         <div>
-                            <label className="block text-sm font-medium mb-1 dark:text-slate-300">Método</label>
+                            <label className="block text-sm font-medium mb-2 dark:text-slate-300">Forma de Pagamento</label>
                             <div className="grid grid-cols-2 gap-2">
                                 {['credit', 'debit', 'pix', 'cash'].map(m => (
                                     <button
                                         key={m}
                                         onClick={() => setPaymentMethod(m)}
-                                        className={`p-2 rounded border text-sm capitalize ${paymentMethod === m ? 'bg-primary-100 border-primary-500 text-primary-700' : 'border-slate-200 dark:border-slate-600 dark:text-slate-300'}`}
+                                        className={`p-3 rounded-lg border text-sm font-medium capitalize transition-all ${paymentMethod === m ? 'bg-primary-50 border-primary-500 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300' : 'border-slate-200 dark:border-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
                                     >
-                                        {m === 'credit' ? 'Crédito' : m === 'debit' ? 'Débito' : m}
+                                        {m === 'credit' ? 'Crédito' : m === 'debit' ? 'Débito' : m === 'cash' ? 'Dinheiro' : 'Pix'}
                                     </button>
                                 ))}
                             </div>
                         </div>
                         {paymentMethod === 'credit' && (
-                             <div>
-                                <label className="block text-sm font-medium mb-1 dark:text-slate-300">Parcelas</label>
+                             <div className="animate-in slide-in-from-top-2">
+                                <label className="block text-sm font-medium mb-1 dark:text-slate-300">Parcelamento</label>
                                 <select 
                                     value={installments} 
                                     onChange={e => setInstallments(Number(e.target.value))}
-                                    className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                                    className="w-full p-2 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                                 >
                                     {[1,2,3,4,5,6].map(i => (
                                         <option key={i} value={i}>{i}x de {formatCurrency(total / i)}</option>
@@ -261,14 +338,14 @@ export const POS: React.FC = () => {
                     </div>
                 )}
 
-                <div className="bg-slate-50 dark:bg-slate-700 p-4 rounded mb-6 text-center">
-                    <p className="text-sm text-slate-500 dark:text-slate-300">Valor Total</p>
-                    <p className="text-3xl font-bold text-slate-800 dark:text-white">{formatCurrency(total)}</p>
+                <div className="bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg mb-6 text-center border border-slate-100 dark:border-slate-600">
+                    <p className="text-sm text-slate-500 dark:text-slate-400 uppercase tracking-wide">Valor Total</p>
+                    <p className="text-4xl font-bold text-slate-800 dark:text-white mt-1">{formatCurrency(total)}</p>
                 </div>
 
-                <div className="flex gap-2">
-                    <button onClick={() => setIsPaymentModalOpen(false)} className="flex-1 py-2 text-slate-600 dark:text-slate-300">Cancelar</button>
-                    <button onClick={finalizeTransaction} className="flex-1 py-2 bg-primary-600 text-white rounded font-bold">
+                <div className="flex gap-3">
+                    <button onClick={() => setIsPaymentModalOpen(false)} className="flex-1 py-3 text-slate-600 dark:text-slate-300 font-medium hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors">Cancelar</button>
+                    <button onClick={finalizeTransaction} className="flex-1 py-3 bg-primary-600 text-white rounded-lg font-bold hover:bg-primary-700 shadow-lg shadow-primary-500/20 transition-all">
                         Confirmar
                     </button>
                 </div>
