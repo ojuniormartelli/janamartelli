@@ -81,3 +81,26 @@ export interface CartItem {
   quantity: number;
   customPrice?: number;
 }
+
+// --- FINANCIAL MODULE TYPES ---
+
+export interface BankAccount {
+  id: number;
+  name: string;
+  balance: number;
+  is_default: boolean;
+  color?: string;
+  active: boolean;
+}
+
+export interface FinancialTransaction {
+  id: number;
+  description: string;
+  amount: number;
+  type: 'income' | 'expense';
+  account_id: number;
+  category: string;
+  date: string;
+  created_at: string;
+  bank_account?: BankAccount; // joined
+}

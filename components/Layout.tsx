@@ -14,7 +14,8 @@ import {
   Moon, 
   Sun,
   Menu,
-  X
+  X,
+  Wallet
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -33,12 +34,10 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   });
 
   useEffect(() => {
-    // Theme Dark Mode Logic
     if (localStorage.getItem('theme') === 'dark') {
       setDarkMode(true);
       document.documentElement.classList.add('dark');
     }
-    
     fetchStoreSettings();
   }, []);
 
@@ -46,11 +45,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       const { data } = await supabase.from('store_settings').select('*').single();
       if (data) {
           setStoreSettings(data);
-          
-          // Apply Browser Title
           document.title = data.store_name;
-          
-          // Apply Favicon if exists
           if (data.logo_url) {
               const link: HTMLLinkElement | null = document.querySelector("link[rel*='icon']") || document.createElement('link');
               link.type = 'image/png';
@@ -59,8 +54,6 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
               link.id = 'dynamic-favicon';
               document.getElementsByTagName('head')[0].appendChild(link);
           }
-
-          // Apply Theme Color via CSS Variable (Affects Tailwind config defined in index.html)
           if (data.theme_color) {
               document.documentElement.style.setProperty('--color-primary', data.theme_color);
           }
@@ -80,9 +73,10 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   };
 
   const menuItems = [
-    { path: '/', icon: LayoutDashboard, label: 'Financeiro' },
+    { path: '/', icon: ShoppingCart, label: 'PDV / Caixa' },
+    { path: '/financial', icon: Wallet, label: 'Financeiro' }, // Changed to Financial
+    { path: '/dashboard', icon: LayoutDashboard, label: 'Visão Geral' }, // Renamed
     { path: '/inventory', icon: Shirt, label: 'Estoque' },
-    { path: '/pos', icon: ShoppingCart, label: 'PDV / Caixa' },
     { path: '/sales', icon: History, label: 'Vendas' },
     { path: '/clients', icon: Users, label: 'Clientes' },
     { path: '/settings', icon: Settings, label: 'Configurações' },
@@ -90,12 +84,10 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-200">
-      {/* Mobile Menu Overlay */}
       {mobileMenuOpen && (
         <div className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={() => setMobileMenuOpen(false)} />
       )}
 
-      {/* Sidebar */}
       <aside className={`
         fixed lg:static inset-y-0 left-0 z-50 w-64 bg-white dark:bg-slate-800 shadow-xl transform transition-transform duration-300
         ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
@@ -160,7 +152,6 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         </div>
       </aside>
 
-      {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden">
         <header className="lg:hidden bg-white dark:bg-slate-800 p-4 shadow-sm flex items-center justify-between">
           <div className="flex items-center gap-2">

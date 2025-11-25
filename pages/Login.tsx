@@ -1,10 +1,13 @@
+
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { Lock, User, Eye, EyeOff, Database, X, Copy, Check } from 'lucide-react';
 import { dbSetupScript } from '../utils/database.sql';
+import { useNavigate } from 'react-router-dom';
 
 export const Login: React.FC = () => {
   const { signIn } = useAuth();
+  const navigate = useNavigate();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -23,8 +26,11 @@ export const Login: React.FC = () => {
     const { error } = await signIn(username, password);
     if (error) {
       setError('Falha ao entrar. Verifique credenciais ou rode o script SQL.');
+      setLoading(false);
+    } else {
+      // Login com sucesso, redirecionar para Home (PDV)
+      navigate('/');
     }
-    setLoading(false);
   };
 
   const copyToClipboard = () => {
