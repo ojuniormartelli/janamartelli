@@ -8,16 +8,8 @@ import { POS } from './pages/POS';
 import { Dashboard } from './pages/Dashboard';
 import { Settings } from './pages/Settings';
 import { Clients } from './pages/Clients';
+import { Sales } from './pages/Sales';
 
-// Componente definido fora para evitar recriação a cada render
-const Placeholder = ({ title }: { title: string }) => (
-    <div className="p-10 text-center">
-        <h2 className="text-2xl font-bold dark:text-white">{title}</h2>
-        <p className="text-slate-500">Módulo em desenvolvimento</p>
-    </div>
-);
-
-// Rota protegida simplificada (apenas layout, já que o usuário é sempre 'logado')
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { loading } = useAuth();
   
@@ -35,13 +27,12 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 const AppRoutes = () => {
     return (
         <Routes>
-            {/* Redirecionar Login antigo para Home */}
             <Route path="/login" element={<Navigate to="/" replace />} />
             
             <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
             <Route path="/pos" element={<ProtectedRoute><POS /></ProtectedRoute>} />
-            <Route path="/sales" element={<ProtectedRoute><Placeholder title="Histórico de Vendas" /></ProtectedRoute>} />
+            <Route path="/sales" element={<ProtectedRoute><Sales /></ProtectedRoute>} />
             <Route path="/clients" element={<ProtectedRoute><Clients /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             
