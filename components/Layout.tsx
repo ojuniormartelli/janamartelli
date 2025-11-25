@@ -1,6 +1,8 @@
+
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../supabaseClient';
 import { 
   LayoutDashboard, 
   Shirt, 
@@ -24,13 +26,46 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const location = useLocation();
   const [darkMode, setDarkMode] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [storeSettings, setStoreSettings] = useState({
+      store_name: 'PijamaManager',
+      theme_color: '#0ea5e9',
+      logo_url: ''
+  });
 
   useEffect(() => {
+    // Theme Dark Mode Logic
     if (localStorage.getItem('theme') === 'dark') {
       setDarkMode(true);
       document.documentElement.classList.add('dark');
     }
+    
+    fetchStoreSettings();
   }, []);
+
+  const fetchStoreSettings = async () => {
+      const { data } = await supabase.from('store_settings').select('*').single();
+      if (data) {
+          setStoreSettings(data);
+          
+          // Apply Browser Title
+          document.title = data.store_name;
+          
+          // Apply Favicon if exists
+          if (data.logo_url) {
+              const link: HTMLLinkElement | null = document.querySelector("link[rel*='icon']") || document.createElement('link');
+              link.type = 'image/png';
+              link.rel = 'icon';
+              link.href = data.logo_url;
+              link.id = 'dynamic-favicon';
+              document.getElementsByTagName('head')[0].appendChild(link);
+          }
+
+          // Apply Theme Color via CSS Variable (Affects Tailwind config defined in index.html)
+          if (data.theme_color) {
+              document.documentElement.style.setProperty('--color-primary', data.theme_color);
+          }
+      }
+  };
 
   const toggleTheme = () => {
     const newMode = !darkMode;
@@ -66,12 +101,17 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
         <div className="h-full flex flex-col">
-          <div className="p-6 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
+          <div className="p-6 border-b border-slate-200 dark:border-slate-700 flex items-center gap-3">
+            {storeSettings.logo_url && (
+                <img src={storeSettings.logo_url} alt="Logo" className="w-10 h-10 object-contain rounded" />
+            )}
             <div>
-              <h1 className="text-2xl font-bold text-primary-600 dark:text-primary-400">PijamaPro</h1>
+              <h1 className="text-xl font-bold text-primary-600 dark:text-primary-400 leading-tight">
+                  {storeSettings.store_name}
+              </h1>
               <p className="text-xs text-slate-500 dark:text-slate-400">Olá, {profile?.username}</p>
             </div>
-            <button onClick={() => setMobileMenuOpen(false)} className="lg:hidden text-slate-500">
+            <button onClick={() => setMobileMenuOpen(false)} className="lg:hidden text-slate-500 ml-auto">
               <X size={24} />
             </button>
           </div>
@@ -123,7 +163,10 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden">
         <header className="lg:hidden bg-white dark:bg-slate-800 p-4 shadow-sm flex items-center justify-between">
-          <h1 className="font-bold text-slate-800 dark:text-white">PijamaManager</h1>
+          <div className="flex items-center gap-2">
+             {storeSettings.logo_url && <img src={storeSettings.logo_url} className="w-8 h-8 object-contain"/>}
+             <h1 className="font-bold text-slate-800 dark:text-white">{storeSettings.store_name}</h1>
+          </div>
           <button onClick={() => setMobileMenuOpen(true)} className="text-slate-600 dark:text-slate-300">
             <Menu size={24} />
           </button>

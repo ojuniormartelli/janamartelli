@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PijamaManager Pro</title>
+    <link rel="icon" type="image/png" href="" id="dynamic-favicon" />
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -15,7 +16,7 @@
                 50: '#f0f9ff',
                 100: '#e0f2fe',
                 500: '#0ea5e9',
-                600: '#0284c7',
+                600: 'var(--color-primary, #0284c7)', // Cor dinâmica via CSS Variable
                 700: '#0369a1',
               }
             }

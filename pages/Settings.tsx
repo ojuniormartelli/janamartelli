@@ -2,15 +2,23 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { dbSetupScript } from '../utils/database.sql';
-import { Copy, Bell, Check, CreditCard, Trash2, Plus, Save, X } from 'lucide-react';
+import { Copy, Check, CreditCard, Trash2, Plus, Save, Store, Palette, Image as ImageIcon } from 'lucide-react';
 import { PaymentMethod } from '../types';
 
 export const Settings: React.FC = () => {
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<'general' | 'payments' | 'database'>('general');
-  const [methods, setMethods] = useState<PaymentMethod[]>([]);
   
-  // New Payment Method State
+  // Store Settings
+  const [storeSettings, setStoreSettings] = useState({
+      id: 1,
+      store_name: '',
+      theme_color: '#0ea5e9',
+      logo_url: ''
+  });
+
+  // Payment Methods
+  const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [isEditingMethod, setIsEditingMethod] = useState(false);
   const [currentMethod, setCurrentMethod] = useState<Partial<PaymentMethod>>({ 
       name: '', type: 'credit', rates: {} 
@@ -18,8 +26,29 @@ export const Settings: React.FC = () => {
   const [tempRates, setTempRates] = useState<{installments: string, rate: string}[]>([]);
 
   useEffect(() => {
+    fetchSettings();
     fetchPaymentMethods();
   }, []);
+
+  const fetchSettings = async () => {
+      const { data } = await supabase.from('store_settings').select('*').single();
+      if (data) setStoreSettings(data);
+  };
+
+  const saveGeneralSettings = async () => {
+      const { error } = await supabase.from('store_settings').upsert({
+          id: 1, // Always ID 1 for single store
+          store_name: storeSettings.store_name,
+          theme_color: storeSettings.theme_color,
+          logo_url: storeSettings.logo_url
+      });
+
+      if (error) alert("Erro ao salvar configurações");
+      else {
+          alert("Configurações salvas! Recarregue a página para ver as mudanças.");
+          window.location.reload();
+      }
+  };
 
   const fetchPaymentMethods = async () => {
     const { data } = await supabase.from('payment_methods').select('*').order('id');
@@ -127,16 +156,51 @@ export const Settings: React.FC = () => {
       </div>
 
       {activeTab === 'general' && (
-          <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-6">
-               <h3 className="text-lg font-bold dark:text-white mb-4 flex items-center"><Bell className="mr-2" size={20}/> Notificações</h3>
-               <div className="flex items-center justify-between">
-                    <div>
-                        <p className="font-medium dark:text-white">Alertas do Sistema</p>
-                        <p className="text-sm text-slate-500">Receba avisos sobre estoque baixo.</p>
-                    </div>
-                    <div className="relative inline-flex h-6 w-11 items-center rounded-full bg-slate-200 dark:bg-slate-700">
-                        <span className="inline-block h-4 w-4 transform rounded-full bg-white transition-transform translate-x-1" />
-                    </div>
+          <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-6 space-y-6">
+               <h3 className="text-lg font-bold dark:text-white flex items-center"><Store className="mr-2" size={20}/> Identidade da Loja</h3>
+               
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                   <div>
+                       <label className="block text-sm font-medium mb-1 dark:text-slate-300">Nome da Loja</label>
+                       <input 
+                           value={storeSettings.store_name}
+                           onChange={e => setStoreSettings({...storeSettings, store_name: e.target.value})}
+                           className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                           placeholder="Minha Loja"
+                       />
+                   </div>
+                   
+                   <div>
+                       <label className="block text-sm font-medium mb-1 dark:text-slate-300">URL do Logotipo</label>
+                       <div className="relative">
+                            <ImageIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                            <input 
+                                value={storeSettings.logo_url || ''}
+                                onChange={e => setStoreSettings({...storeSettings, logo_url: e.target.value})}
+                                className="w-full pl-10 p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                                placeholder="https://..."
+                            />
+                       </div>
+                   </div>
+
+                   <div>
+                       <label className="block text-sm font-medium mb-1 dark:text-slate-300">Cor de Destaque (Botões)</label>
+                       <div className="flex items-center gap-3">
+                            <input 
+                                type="color"
+                                value={storeSettings.theme_color}
+                                onChange={e => setStoreSettings({...storeSettings, theme_color: e.target.value})}
+                                className="h-10 w-20 cursor-pointer rounded border border-slate-300 dark:border-slate-600"
+                            />
+                            <span className="text-sm text-slate-500 font-mono">{storeSettings.theme_color}</span>
+                       </div>
+                   </div>
+               </div>
+
+               <div className="pt-4 border-t border-slate-100 dark:border-slate-700 flex justify-end">
+                    <button onClick={saveGeneralSettings} className="px-6 py-2 bg-primary-600 text-white rounded font-bold hover:bg-primary-700 flex items-center">
+                        <Save size={18} className="mr-2"/> Salvar Alterações
+                    </button>
                </div>
           </div>
       )}

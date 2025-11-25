@@ -4,7 +4,7 @@ import { supabase } from '../supabaseClient';
 import { Product, CartItem, Client, ProductVariation, PaymentMethod } from '../types';
 import { Search, ShoppingBag, Trash, UserPlus, CheckCircle, X, Save, User, Mail, MapPin, AlertCircle } from 'lucide-react';
 import { formatCurrency, maskCPF, maskPhone } from '../utils/formatters';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 const getSizeWeight = (size: string) => {
   const weights: Record<string, number> = {
@@ -35,6 +35,7 @@ export const POS: React.FC = () => {
   
   const [transactionType, setTransactionType] = useState<'sale' | 'quote'>('sale');
   const location = useLocation();
+  const navigate = useNavigate();
 
   useEffect(() => {
     loadData();
@@ -100,8 +101,8 @@ export const POS: React.FC = () => {
               setCart(convertedCart);
           }
           
-          // Clear state so refresh doesn't re-trigger
-          window.history.replaceState({}, document.title);
+          // Clear navigation state immediately after consuming to prevent loop/refresh issues
+          navigate(location.pathname, { replace: true, state: {} });
       }
   }, [location.state, products]);
 
@@ -216,8 +217,15 @@ export const POS: React.FC = () => {
     }
 
     alert(`${transactionType === 'sale' ? 'Venda' : 'Condicional'} ${code} realizada com sucesso!`);
+    
+    // Reset Everything
     setCart([]);
     setIsPaymentModalOpen(false);
+    setSelectedClient('');
+    
+    // Ensure navigation state is cleared to avoid re-population on reload
+    navigate(location.pathname, { replace: true, state: {} });
+    
     loadData(); // Refresh stock
   };
 

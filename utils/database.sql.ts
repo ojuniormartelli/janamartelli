@@ -28,9 +28,17 @@ CREATE TABLE IF NOT EXISTS public.store_settings (
   id SERIAL PRIMARY KEY,
   store_name TEXT DEFAULT 'PijamaManager Pro',
   theme_color TEXT DEFAULT '#0ea5e9',
+  logo_url TEXT,
   max_installments INTEGER DEFAULT 6,
   payment_config JSONB DEFAULT '[]'::jsonb
 );
+
+-- MIGRATION PARA LOGO_URL
+DO $$
+BEGIN
+    ALTER TABLE public.store_settings ADD COLUMN IF NOT EXISTS logo_url TEXT;
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+
 
 -- 3. Clients
 CREATE TABLE IF NOT EXISTS public.clients (
@@ -159,6 +167,7 @@ BEGIN
     DROP POLICY IF EXISTS "Public Access" ON vendas;
     DROP POLICY IF EXISTS "Public Access" ON venda_itens;
     DROP POLICY IF EXISTS "Public Access" ON payment_methods;
+    DROP POLICY IF EXISTS "Public Access" ON store_settings;
 EXCEPTION WHEN undefined_object THEN NULL; END $$;
 
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
@@ -168,6 +177,7 @@ ALTER TABLE estoque_tamanhos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE vendas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE venda_itens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payment_methods ENABLE ROW LEVEL SECURITY;
+ALTER TABLE store_settings ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Public Access" ON profiles FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Public Access" ON clients FOR ALL USING (true) WITH CHECK (true);
@@ -176,10 +186,11 @@ CREATE POLICY "Public Access" ON estoque_tamanhos FOR ALL USING (true) WITH CHEC
 CREATE POLICY "Public Access" ON vendas FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Public Access" ON venda_itens FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Public Access" ON payment_methods FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Public Access" ON store_settings FOR ALL USING (true) WITH CHECK (true);
 
 -- Insert Demo Data
 INSERT INTO profiles (id, username, role) VALUES ('00000000-0000-0000-0000-000000000000', 'admin_demo', 'admin') ON CONFLICT (id) DO NOTHING;
-INSERT INTO store_settings (id, store_name) VALUES (1, 'Minha Loja de Pijamas') ON CONFLICT DO NOTHING;
+INSERT INTO store_settings (id, store_name, theme_color) VALUES (1, 'Minha Loja de Pijamas', '#0ea5e9') ON CONFLICT DO NOTHING;
 
 -- Insert Default Payment Methods
 INSERT INTO payment_methods (name, type, rates) VALUES 
