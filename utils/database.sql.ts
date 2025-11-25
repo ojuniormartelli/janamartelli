@@ -6,7 +6,6 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- NOTA: Este script configura o banco para MODO PÚBLICO (Sem Auth Real)
 
 -- CORREÇÃO CRÍTICA: Remover restrições antigas de chave estrangeira (FK) ligadas ao auth.users
--- Isso corrige o erro "violates foreign key constraint profiles_id_fkey"
 DO $$ 
 BEGIN
     BEGIN
@@ -61,7 +60,7 @@ CREATE TABLE IF NOT EXISTS public.products (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 5. Inventory (Children - Holds specific Model/Color + Size)
+-- 5. Inventory (Children)
 CREATE TABLE IF NOT EXISTS public.estoque_tamanhos (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
   product_id UUID REFERENCES public.products(id) ON DELETE CASCADE,
@@ -71,10 +70,32 @@ CREATE TABLE IF NOT EXISTS public.estoque_tamanhos (
   price_cost DECIMAL(10,2) DEFAULT 0,
   price_sale DECIMAL(10,2) DEFAULT 0,
   sku TEXT,
-  reference TEXT,
-  -- Unique constraint agora inclui o modelo/variante para permitir P/M/G de cores diferentes no mesmo Pai
-  UNIQUE(product_id, model_variant, size)
+  reference TEXT
 );
+
+-- MIGRATION: Garantir que a coluna model_variant existe (caso a tabela já tenha sido criada antes)
+DO $$
+BEGIN
+    ALTER TABLE public.estoque_tamanhos ADD COLUMN IF NOT EXISTS model_variant TEXT DEFAULT 'Padrão';
+EXCEPTION
+    WHEN duplicate_column THEN NULL;
+END $$;
+
+-- MIGRATION: Atualizar Constraints de Unicidade
+-- Remove constraints antigas para garantir que a nova (com model_variant) seja a única ativa
+DO $$ 
+BEGIN
+    ALTER TABLE public.estoque_tamanhos DROP CONSTRAINT IF EXISTS estoque_tamanhos_product_id_size_key;
+    ALTER TABLE public.estoque_tamanhos DROP CONSTRAINT IF EXISTS unique_product_size;
+    -- Dropa a constraint nova se já existir para recriar limpo
+    ALTER TABLE public.estoque_tamanhos DROP CONSTRAINT IF EXISTS unique_variant_size;
+EXCEPTION
+    WHEN undefined_object THEN NULL;
+END $$;
+
+-- Cria a constraint correta: Produto + Modelo + Tamanho deve ser único
+ALTER TABLE public.estoque_tamanhos ADD CONSTRAINT unique_variant_size UNIQUE (product_id, model_variant, size);
+
 
 -- 6. Sales & Quotes
 CREATE TABLE IF NOT EXISTS public.vendas (
@@ -101,18 +122,24 @@ CREATE TABLE IF NOT EXISTS public.venda_itens (
 );
 
 -- RLS Policies (ABERTO PARA PÚBLICO/DEMO)
-DROP POLICY IF EXISTS "Enable all for authenticated" ON profiles;
-DROP POLICY IF EXISTS "Public Access" ON profiles;
-DROP POLICY IF EXISTS "Enable all for authenticated" ON clients;
-DROP POLICY IF EXISTS "Public Access" ON clients;
-DROP POLICY IF EXISTS "Enable all for authenticated" ON products;
-DROP POLICY IF EXISTS "Public Access" ON products;
-DROP POLICY IF EXISTS "Enable all for authenticated" ON estoque_tamanhos;
-DROP POLICY IF EXISTS "Public Access" ON estoque_tamanhos;
-DROP POLICY IF EXISTS "Enable all for authenticated" ON vendas;
-DROP POLICY IF EXISTS "Public Access" ON vendas;
-DROP POLICY IF EXISTS "Enable all for authenticated" ON venda_itens;
-DROP POLICY IF EXISTS "Public Access" ON venda_itens;
+-- Limpeza de policies antigas
+DO $$ 
+BEGIN
+    DROP POLICY IF EXISTS "Enable all for authenticated" ON profiles;
+    DROP POLICY IF EXISTS "Public Access" ON profiles;
+    DROP POLICY IF EXISTS "Enable all for authenticated" ON clients;
+    DROP POLICY IF EXISTS "Public Access" ON clients;
+    DROP POLICY IF EXISTS "Enable all for authenticated" ON products;
+    DROP POLICY IF EXISTS "Public Access" ON products;
+    DROP POLICY IF EXISTS "Enable all for authenticated" ON estoque_tamanhos;
+    DROP POLICY IF EXISTS "Public Access" ON estoque_tamanhos;
+    DROP POLICY IF EXISTS "Enable all for authenticated" ON vendas;
+    DROP POLICY IF EXISTS "Public Access" ON vendas;
+    DROP POLICY IF EXISTS "Enable all for authenticated" ON venda_itens;
+    DROP POLICY IF EXISTS "Public Access" ON venda_itens;
+EXCEPTION
+    WHEN undefined_object THEN NULL;
+END $$;
 
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE clients ENABLE ROW LEVEL SECURITY;

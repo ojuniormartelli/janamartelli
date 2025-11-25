@@ -47,7 +47,6 @@ export const Inventory: React.FC = () => {
   }, []);
 
   // Função auxiliar para processar linha do CSV respeitando aspas
-  // Ex: "R$ 69,90" não deve ser quebrado na vírgula
   const parseCSVLine = (text: string) => {
     const result = [];
     let cell = '';
@@ -82,13 +81,9 @@ export const Inventory: React.FC = () => {
       const lines = text.split('\n');
       let successCount = 0;
       let errorCount = 0;
+      let lastErrorMessage = '';
 
-      // Pula cabeçalho se a primeira linha contiver "SKU" ou "Referencia"
-      const firstLineLower = lines[0].toLowerCase();
-      const startIndex = (firstLineLower.includes('sku') || firstLineLower.includes('referencia')) ? 1 : 0;
-
-      // Cache local para evitar muitas chamadas de SELECT ao banco durante o loop
-      // Mapeia Referencia -> ID do Produto
+      // Cache local
       const { data: existingProducts } = await supabase.from('products').select('id, modelo');
       const productCache = new Map<string, string>(); // Referencia -> UUID
       if (existingProducts) {
@@ -97,32 +92,28 @@ export const Inventory: React.FC = () => {
         });
       }
 
+      // Pula cabeçalho se existir
+      const firstLineLower = lines[0].toLowerCase();
+      const startIndex = (firstLineLower.includes('sku') || firstLineLower.includes('referencia')) ? 1 : 0;
+
       for (let i = startIndex; i < lines.length; i++) {
-        const line = lines[i].trim();
+        // .replace(/\r$/, '') remove o Carriage Return que pode vir do Windows/Excel
+        const line = lines[i].replace(/\r$/, '').trim(); 
         if (!line) continue;
 
         try {
             const cols = parseCSVLine(line);
             
-            // Layout esperado baseado na sua imagem:
-            // 0: SKU
-            // 1: Referencia (Agrupador Pai)
-            // 2: Nome (Nome do Pai)
-            // 3: Modelo (Variante/Cor)
-            // 4: Categoria
-            // 5: Tamanho
-            // 6: Quantidade
-            // 7: Preco_Custo
-            // 8: Preco_Venda
+            // Layout: SKU, Referencia, Nome, Modelo, Categoria, Tamanho, Quantidade, Preco_Custo, Preco_Venda
             
             if (cols.length < 8) { 
-                console.warn(`Linha ${i+1} ignorada: colunas insuficientes`, cols);
+                console.warn(`Linha ${i+1} ignorada: colunas insuficientes (${cols.length})`, cols);
                 errorCount++; 
                 continue; 
             }
 
             const sku = cols[0];
-            const referencia = cols[1]; // Usado para agrupar
+            const referencia = cols[1];
             const nome = cols[2];
             const modeloVariante = cols[3];
             const categoria = cols[4];
@@ -132,20 +123,20 @@ export const Inventory: React.FC = () => {
             const saleStr = cols[8];
 
             if (!referencia || !nome) {
+                console.warn(`Linha ${i+1} ignorada: Referência ou Nome vazios`);
                 errorCount++;
                 continue;
             }
 
-            // 1. Identificar ou Criar Produto Pai (Agrupado por Referencia)
+            // 1. Identificar ou Criar Produto Pai
             let productId = productCache.get(referencia);
 
             if (!productId) {
-                // Tenta criar
                 const { data: newProd, error: createError } = await supabase
                     .from('products')
                     .insert({ 
-                        nome: nome, // Ex: Pijama Mônica
-                        modelo: referencia, // Ex: 12731-03 (Armazenamos a Ref no campo modelo do banco para agrupamento)
+                        nome: nome,
+                        modelo: referencia, // Armazenamos Ref no campo 'modelo' para agrupamento
                         categoria: categoria, 
                         descricao: `${nome} - ${referencia}`
                     })
@@ -153,22 +144,18 @@ export const Inventory: React.FC = () => {
                     .single();
                 
                 if (createError) {
-                    // Se falhar (ex: race condition), tenta buscar novamente pelo modelo/referencia
+                    // Recuperação de falha (race condition)
                     const { data: retryFind } = await supabase.from('products').select('id').eq('modelo', referencia).maybeSingle();
-                    if (retryFind) {
-                        productId = retryFind.id;
-                    } else {
-                        throw createError;
-                    }
+                    if (retryFind) productId = retryFind.id;
+                    else throw new Error(`Erro ao criar produto pai: ${createError.message}`);
                 } else {
                     productId = newProd!.id;
                 }
                 
-                // Atualiza cache
                 if (productId) productCache.set(referencia, productId);
             }
 
-            // 2. Criar/Atualizar Variação (Filho)
+            // 2. Upsert Variação
             const quantity = parseInt(qtdStr) || 0;
             const price_cost = parseCurrencyString(costStr);
             const price_sale = parseCurrencyString(saleStr);
@@ -177,25 +164,31 @@ export const Inventory: React.FC = () => {
                 .from('estoque_tamanhos')
                 .upsert({
                     product_id: productId,
-                    model_variant: modeloVariante, // Ex: T-Shirt Marinho
+                    model_variant: modeloVariante || 'Padrão',
                     size: tamanho.toUpperCase(),
                     sku: sku,
                     quantity: quantity,
                     price_cost: price_cost,
                     price_sale: price_sale,
                     reference: referencia
-                }, { onConflict: 'product_id, model_variant, size' });
+                }, { onConflict: 'product_id, model_variant, size' }); // Constraint name
 
             if (upsertError) throw upsertError;
             successCount++;
 
-        } catch (err) {
+        } catch (err: any) {
             console.error(`Erro na linha ${i + 1}:`, err);
+            lastErrorMessage = err.message || JSON.stringify(err);
             errorCount++;
         }
       }
 
-      alert(`Importação concluída!\nSucessos: ${successCount}\nErros: ${errorCount}`);
+      let msg = `Importação concluída!\nSucessos: ${successCount}\nErros: ${errorCount}`;
+      if (errorCount > 0 && lastErrorMessage) {
+          msg += `\n\nExemplo de erro (último): ${lastErrorMessage}\n\nDica: Se o erro for sobre 'column model_variant', rode o Script SQL novamente em Configurações.`;
+      }
+      alert(msg);
+      
       setImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
       fetchInventory();
@@ -268,7 +261,6 @@ export const Inventory: React.FC = () => {
             price_sale: parseCurrencyString(tempVar.sale)
         }]
     }));
-    // Reset temp slightly but keep generic info
     setTempVar(prev => ({ ...prev, size: 'M', sku: '' }));
   };
 
