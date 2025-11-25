@@ -3,6 +3,7 @@ export interface Profile {
   id: string;
   username: string;
   role: 'admin' | 'employee';
+  password?: string; // Campo opcional para tipagem, mas obrigatório no DB
 }
 
 export interface Client {

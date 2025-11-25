@@ -1,14 +1,10 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Profile } from '../types';
-
-// Mock types since we are bypassing real auth
-interface Session { user: any }
-interface User { id: string; email: string }
+import { supabase } from '../supabaseClient';
 
 interface AuthContextType {
-  session: Session | null;
-  user: User | null;
+  user: Profile | null;
   profile: Profile | null;
   loading: boolean;
   signIn: (username: string, password: string) => Promise<{ error: any }>;
@@ -18,41 +14,58 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [session, setSession] = useState<Session | null>(null);
-  const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [user, setUser] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // MODO DEMO: Auto-login imediato
-    const demoUser = {
-        id: '00000000-0000-0000-0000-000000000000',
-        email: 'demo@pijama.app'
-    };
-    
-    const demoProfile: Profile = {
-        id: demoUser.id,
-        username: 'Admin Demo',
-        role: 'admin'
-    };
-
-    setUser(demoUser);
-    setProfile(demoProfile);
-    setSession({ user: demoUser });
+    // Check if user is stored in local storage to persist session
+    const storedUser = localStorage.getItem('pijama_user');
+    if (storedUser) {
+        try {
+            const parsed = JSON.parse(storedUser);
+            setUser(parsed);
+        } catch (e) {
+            localStorage.removeItem('pijama_user');
+        }
+    }
     setLoading(false);
   }, []);
 
   const signIn = async (username: string, password: string) => {
-    // Fake success
-    return { error: null };
+    try {
+        // Real database check
+        const { data, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('username', username)
+            // Note: In production, passwords should be hashed (e.g. bcrypt). 
+            // We are comparing plain text as requested for this custom implementation.
+            .eq('password', password) 
+            .single();
+
+        if (error || !data) {
+            return { error: 'Usuário ou senha incorretos' };
+        }
+
+        const profile: Profile = data;
+        setUser(profile);
+        localStorage.setItem('pijama_user', JSON.stringify(profile));
+        return { error: null };
+
+    } catch (e) {
+        return { error: e };
+    }
   };
 
   const signOut = async () => {
+    setUser(null);
+    localStorage.removeItem('pijama_user');
+    // Optional: reload to clear states
     window.location.reload();
   };
 
   return (
-    <AuthContext.Provider value={{ session, user, profile, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, profile: user, loading, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );

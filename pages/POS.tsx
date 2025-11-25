@@ -5,6 +5,7 @@ import { Product, CartItem, Client, ProductVariation, PaymentMethod } from '../t
 import { Search, ShoppingBag, Trash, UserPlus, CheckCircle, X, Save, User, Mail, MapPin, AlertCircle } from 'lucide-react';
 import { formatCurrency, maskCPF, maskPhone } from '../utils/formatters';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 const getSizeWeight = (size: string) => {
   const weights: Record<string, number> = {
@@ -15,6 +16,7 @@ const getSizeWeight = (size: string) => {
 };
 
 export const POS: React.FC = () => {
+  const { user } = useAuth(); // Get authenticated user
   const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -88,7 +90,6 @@ export const POS: React.FC = () => {
                   const variation = item.product_variation;
                   const product = variation?.products; 
                   
-                  // Reconstruct Cart Item logic
                   if (variation && product) {
                       convertedCart.push({
                           product: product,
@@ -101,7 +102,6 @@ export const POS: React.FC = () => {
               setCart(convertedCart);
           }
           
-          // Clear navigation state immediately after consuming to prevent loop/refresh issues
           navigate(location.pathname, { replace: true, state: {} });
       }
   }, [location.state, products]);
@@ -126,7 +126,6 @@ export const POS: React.FC = () => {
 
   const rawTotal = cart.reduce((acc, item) => acc + (item.customPrice || item.variation.price_sale) * item.quantity, 0);
   
-  // Calculate Total with Interest only if applyInterest is true
   const finalTotal = applyInterest 
     ? rawTotal * (1 + (interestRate / 100)) 
     : rawTotal;
@@ -138,17 +137,15 @@ export const POS: React.FC = () => {
       }
       setTransactionType(type);
       setIsPaymentModalOpen(true);
-      // Reset payment selection
       if (paymentMethods.length > 0) handleMethodSelect(paymentMethods[0].id);
   };
 
   const handleMethodSelect = (id: number) => {
       setSelectedMethodId(id);
       setInstallments(1);
-      setApplyInterest(true); // Default to applying interest
+      setApplyInterest(true); 
       const method = paymentMethods.find(m => m.id === id);
       if (method) {
-          // Check for single installment rate (default)
           const rate = method.rates?.['1'] || 0;
           setInterestRate(rate);
       }
@@ -164,19 +161,17 @@ export const POS: React.FC = () => {
   };
 
   const finalizeTransaction = async () => {
-    const { data: userData } = await supabase.auth.getUser();
-    
-    // 1. Get Formatted Code (V0001 or C0001) via RPC
+    // 1. Get Code
     const prefix = transactionType === 'sale' ? 'V' : 'C';
     const { data: code } = await supabase.rpc('get_next_code', { prefix });
 
     const method = paymentMethods.find(m => m.id === selectedMethodId);
 
-    // 2. Create Sale Header
+    // 2. Create Header
     const { data: sale, error } = await supabase.from('vendas').insert({
-        code: code, // Saved code
+        code: code, 
         client_id: selectedClient,
-        user_id: userData.user?.id || '00000000-0000-0000-0000-000000000000',
+        user_id: user?.id || '00000000-0000-0000-0000-000000000000', // Use Context User
         total_value: finalTotal,
         payment_method: method ? method.name : 'Outros',
         payment_status: transactionType === 'sale' ? 'paid' : 'pending',
@@ -195,7 +190,7 @@ export const POS: React.FC = () => {
         return;
     }
 
-    // 3. Create Sale Items
+    // 3. Items
     const saleItems = cart.map(item => ({
         sale_id: sale.id,
         product_variation_id: item.variation.id,
@@ -206,9 +201,7 @@ export const POS: React.FC = () => {
 
     await supabase.from('venda_itens').insert(saleItems);
 
-    // 4. Update Stock (Deduct for BOTH Sale and Quote based on user request)
-    // "Ao colocar um produto em condicional, o produto deve ficar como pendente" -> For simplicity, we deduct from 'quantity'
-    // If returned, we add it back.
+    // 4. Update Stock
     for (const item of cart) {
         const { data: currentVar } = await supabase.from('estoque_tamanhos').select('quantity').eq('id', item.variation.id).single();
         if(currentVar) {
@@ -218,15 +211,11 @@ export const POS: React.FC = () => {
 
     alert(`${transactionType === 'sale' ? 'Venda' : 'Condicional'} ${code} realizada com sucesso!`);
     
-    // Reset Everything
     setCart([]);
     setIsPaymentModalOpen(false);
     setSelectedClient('');
-    
-    // Ensure navigation state is cleared to avoid re-population on reload
     navigate(location.pathname, { replace: true, state: {} });
-    
-    loadData(); // Refresh stock
+    loadData();
   };
 
   const handleQuickSaveClient = async () => {
