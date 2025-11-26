@@ -437,6 +437,16 @@ export const POS: React.FC = () => {
                         <input className="p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="CPF" value={newClientData.cpf} onChange={e => setNewClientData({...newClientData, cpf: maskCPF(e.target.value)})} />
                         <input className="p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="Telefone" value={newClientData.phone} onChange={e => setNewClientData({...newClientData, phone: maskPhone(e.target.value)})} />
                     </div>
+                    
+                    {/* Novos campos adicionados */}
+                    <input className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="E-mail (Opcional)" value={newClientData.email} onChange={e => setNewClientData({...newClientData, email: e.target.value})} />
+                    <textarea 
+                        className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white resize-none h-20" 
+                        placeholder="Endereço (Opcional)" 
+                        value={newClientData.address} 
+                        onChange={e => setNewClientData({...newClientData, address: e.target.value})} 
+                    />
+
                     <button onClick={handleQuickSaveClient} className="w-full py-2 bg-primary-600 text-white rounded font-bold mt-2">Salvar</button>
                 </div>
             </div>
