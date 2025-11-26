@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { Product, ProductVariation } from '../types';
-import { ChevronDown, ChevronRight, Plus, AlertTriangle, FileSpreadsheet, Loader, Trash2, Edit2, X, Save, Search, RefreshCw, ArrowUpDown } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, AlertTriangle, FileSpreadsheet, Loader, Trash2, Edit2, X, Save, Search, RefreshCw, ArrowUpDown, Download } from 'lucide-react';
 import { formatCurrency, parseCurrencyString } from '../utils/formatters';
 
 type SortField = 'modelo' | 'nome' | 'categoria' | 'stock';
@@ -106,7 +106,59 @@ export const Inventory: React.FC = () => {
   }, [products, searchQuery, sortConfig]);
 
 
-  // --- LOGIC: IMPORT & CRUD ---
+  // --- LOGIC: IMPORT, EXPORT & CRUD ---
+  const handleExportCSV = () => {
+      // Header: SKU, Referencia, Nome, Modelo, Categoria, Tamanho, Quantidade, Preco_Custo, Preco_Venda
+      const header = "SKU,Referencia,Nome,Modelo,Categoria,Tamanho,Quantidade,Preco_Custo,Preco_Venda\n";
+      
+      const rows: string[] = [];
+      
+      products.forEach(p => {
+          if (p.variations && p.variations.length > 0) {
+              p.variations.forEach(v => {
+                  const escape = (t: any) => `"${(t || '').toString().replace(/"/g, '""')}"`;
+                  const row = [
+                      escape(v.sku),
+                      escape(p.modelo),
+                      escape(p.nome),
+                      escape(v.model_variant),
+                      escape(p.categoria),
+                      escape(v.size),
+                      v.quantity,
+                      v.price_cost.toFixed(2).replace('.', ','),
+                      v.price_sale.toFixed(2).replace('.', ',')
+                  ].join(',');
+                  rows.push(row);
+              });
+          } else {
+               // Produto sem variação (raro, mas possível)
+               const escape = (t: any) => `"${(t || '').toString().replace(/"/g, '""')}"`;
+               const row = [
+                  "",
+                  escape(p.modelo),
+                  escape(p.nome),
+                  "",
+                  escape(p.categoria),
+                  "",
+                  0,
+                  "0,00",
+                  "0,00"
+               ].join(',');
+               rows.push(row);
+          }
+      });
+
+      const csvContent = header + rows.join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `estoque_completo_${new Date().toISOString().slice(0,10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+  };
+
   const parseCSVLine = (text: string) => {
     const result = [];
     let cell = '';
@@ -135,6 +187,7 @@ export const Inventory: React.FC = () => {
       const lines = text.split('\n');
       let successCount = 0;
       let errorCount = 0;
+      let errorMsg = "";
       
       const { data: existingProducts } = await supabase.from('products').select('id, modelo');
       const productCache = new Map<string, string>();
@@ -171,7 +224,7 @@ export const Inventory: React.FC = () => {
             }
 
             if (productId) {
-                await supabase.from('estoque_tamanhos').upsert({
+                const { error } = await supabase.from('estoque_tamanhos').upsert({
                     product_id: productId,
                     model_variant: modeloVariante || 'Padrão',
                     size: tamanho.toUpperCase(),
@@ -181,11 +234,24 @@ export const Inventory: React.FC = () => {
                     price_sale: parseCurrencyString(saleStr),
                     reference: referencia
                 }, { onConflict: 'product_id, model_variant, size' });
-                successCount++;
+                
+                if (error) {
+                    errorCount++;
+                    errorMsg = error.message;
+                } else {
+                    successCount++;
+                }
             }
-        } catch (err) { errorCount++; }
+        } catch (err: any) { 
+            errorCount++; 
+            errorMsg = err.message;
+        }
       }
-      alert(`Importação concluída!\nSucessos: ${successCount}\nErros: ${errorCount}`);
+      
+      let msg = `Importação concluída!\nSucessos: ${successCount}\nErros: ${errorCount}`;
+      if (errorCount > 0 && errorMsg) msg += `\nÚltimo Erro: ${errorMsg}`;
+      
+      alert(msg);
       setImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
       fetchInventory();
@@ -195,6 +261,47 @@ export const Inventory: React.FC = () => {
 
   const handleReportLoss = async (variant: ProductVariation) => {
     if (!confirm(`Baixar 1 unidade defeituosa de "${variant.model_variant} - ${variant.size}"?`)) return;
+    
+    // 1. Create a "Loss" sale record for financial tracking in SALES History
+    const { data: lossSale } = await supabase.from('vendas').insert({
+        total_value: variant.price_cost, // Record cost as value
+        payment_status: 'loss',
+        status_label: 'Baixa',
+        payment_method: 'Perda',
+        observacoes: `Baixa de item defeituoso: ${variant.sku}`
+    }).select().single();
+
+    if (lossSale) {
+        await supabase.from('venda_itens').insert({
+            sale_id: lossSale.id,
+            product_variation_id: variant.id,
+            quantity: 1,
+            unit_price: 0,
+            original_cost: variant.price_cost
+        });
+
+        // 2. Register Financial Transaction (Expense) for Cash Flow
+        // Find default account to attribute the loss
+        const { data: defaultAccount } = await supabase.from('bank_accounts').select('*').eq('is_default', true).single();
+        const accountId = defaultAccount ? defaultAccount.id : (await supabase.from('bank_accounts').select('id').limit(1).single()).data?.id;
+
+        if (accountId) {
+             await supabase.from('transactions').insert({
+                 description: `Baixa Estoque: ${variant.sku}`,
+                 amount: variant.price_cost,
+                 type: 'expense',
+                 account_id: accountId,
+                 category: 'Perdas',
+                 date: new Date().toISOString().slice(0, 10)
+             });
+             // Update account balance (reduce asset value)
+             if (defaultAccount) {
+                 await supabase.from('bank_accounts').update({ balance: defaultAccount.balance - variant.price_cost }).eq('id', accountId);
+             }
+        }
+    }
+
+    // 3. Reduce Stock
     const { error } = await supabase.from('estoque_tamanhos').update({ quantity: variant.quantity - 1 }).eq('id', variant.id);
     if (!error) fetchInventory();
   };
@@ -332,13 +439,23 @@ export const Inventory: React.FC = () => {
 
         <div className="flex gap-2 w-full xl:w-auto">
           <button 
+            onClick={handleExportCSV}
+            className="flex items-center px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-600 text-sm"
+            title="Exportar Estoque Completo para CSV"
+          >
+            <Download className="mr-2" size={16} />
+            Exportar
+          </button>
+          
+          <button 
             onClick={() => fileInputRef.current?.click()}
             disabled={importing}
             className="flex items-center px-4 py-2 bg-slate-200 text-slate-700 rounded hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-200 disabled:opacity-50 text-sm"
           >
             {importing ? <Loader className="mr-2 animate-spin" size={16} /> : <FileSpreadsheet className="mr-2" size={16} />}
-            CSV
+            Importar
           </button>
+          
           <button onClick={() => setIsNewProductModalOpen(true)} className="flex items-center px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-700 text-sm whitespace-nowrap">
             <Plus className="mr-2" size={16} />
             Novo Produto
@@ -346,6 +463,7 @@ export const Inventory: React.FC = () => {
         </div>
       </div>
 
+      {/* ... Rest of the component (Tables, Modals) - No changes needed below ... */}
       <div className="bg-white dark:bg-slate-800 rounded-lg shadow overflow-hidden">
         {loading ? (
             <div className="p-8 text-center text-slate-500">Carregando estoque...</div>

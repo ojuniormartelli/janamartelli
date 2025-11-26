@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Product, CartItem, Client, ProductVariation, PaymentMethod } from '../types';
-import { Search, ShoppingBag, Trash, UserPlus, CheckCircle, X, Save, User, Mail, MapPin, AlertCircle } from 'lucide-react';
+import { Search, ShoppingBag, Trash, UserPlus, CheckCircle, X, Save, User, Mail, MapPin, AlertCircle, Tag } from 'lucide-react';
 import { formatCurrency, maskCPF, maskPhone } from '../utils/formatters';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -35,6 +35,10 @@ export const POS: React.FC = () => {
   const [isNewClientModalOpen, setIsNewClientModalOpen] = useState(false);
   const [newClientData, setNewClientData] = useState({ full_name: '', cpf: '', phone: '', email: '', address: '' });
   
+  // Discount Modal State
+  const [discountItemIndex, setDiscountItemIndex] = useState<number | null>(null);
+  const [discountValue, setDiscountValue] = useState('');
+
   const [transactionType, setTransactionType] = useState<'sale' | 'quote'>('sale');
   const location = useLocation();
   const navigate = useNavigate();
@@ -108,20 +112,42 @@ export const POS: React.FC = () => {
 
   const addToCart = (product: Product, variation: ProductVariation) => {
     setCart(prev => {
-      const existing = prev.find(item => item.variation.id === variation.id);
-      if (existing) {
+      const existingIndex = prev.findIndex(item => item.variation.id === variation.id);
+      if (existingIndex >= 0) {
+        const existing = prev[existingIndex];
         if (existing.quantity >= variation.quantity) {
             alert("Estoque insuficiente!");
             return prev;
         }
-        return prev.map(item => item.variation.id === variation.id ? { ...item, quantity: item.quantity + 1 } : item);
+        const newCart = [...prev];
+        newCart[existingIndex] = { ...existing, quantity: existing.quantity + 1 };
+        return newCart;
       }
       return [...prev, { product, variation, quantity: 1 }];
     });
   };
 
-  const removeFromCart = (varId: string) => {
-    setCart(prev => prev.filter(i => i.variation.id !== varId));
+  const removeFromCart = (index: number) => {
+    setCart(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const openDiscountModal = (index: number) => {
+      setDiscountItemIndex(index);
+      const currentPrice = cart[index].customPrice || cart[index].variation.price_sale;
+      setDiscountValue(currentPrice.toString());
+  };
+
+  const applyDiscount = () => {
+      if (discountItemIndex === null) return;
+      const newVal = parseFloat(discountValue.replace(',', '.'));
+      if (isNaN(newVal) || newVal < 0) return alert("Valor inválido");
+
+      setCart(prev => {
+          const newCart = [...prev];
+          newCart[discountItemIndex] = { ...newCart[discountItemIndex], customPrice: newVal };
+          return newCart;
+      });
+      setDiscountItemIndex(null);
   };
 
   const rawTotal = cart.reduce((acc, item) => acc + (item.customPrice || item.variation.price_sale) * item.quantity, 0);
@@ -201,19 +227,45 @@ export const POS: React.FC = () => {
 
     await supabase.from('venda_itens').insert(saleItems);
 
-    // 4. Update Stock
+    // 4. Update Stock & Financial (if Sale)
     for (const item of cart) {
         const { data: currentVar } = await supabase.from('estoque_tamanhos').select('quantity').eq('id', item.variation.id).single();
         if(currentVar) {
             await supabase.from('estoque_tamanhos').update({ quantity: currentVar.quantity - item.quantity}).eq('id', item.variation.id);
         }
     }
+    
+    // Create transaction record for cash flow if it is a paid sale
+    if (transactionType === 'sale' && method) {
+        // Retrieve default account
+        const { data: defaultAccount } = await supabase.from('bank_accounts').select('*').eq('is_default', true).single();
+        const accountId = defaultAccount ? defaultAccount.id : (await supabase.from('bank_accounts').select('id').limit(1).single()).data?.id;
+
+        if (accountId) {
+             await supabase.from('transactions').insert({
+                 description: `Venda ${code} - ${method.name}`,
+                 amount: finalTotal,
+                 type: 'income',
+                 account_id: accountId,
+                 category: 'Vendas',
+                 date: new Date().toISOString().slice(0, 10)
+             });
+             // Update account balance
+             if (defaultAccount) {
+                 await supabase.from('bank_accounts').update({ balance: defaultAccount.balance + finalTotal }).eq('id', accountId);
+             }
+        }
+    }
 
     alert(`${transactionType === 'sale' ? 'Venda' : 'Condicional'} ${code} realizada com sucesso!`);
     
+    // Clear State
     setCart([]);
     setIsPaymentModalOpen(false);
     setSelectedClient('');
+    
+    // Clear history state to prevent cart reloading on refresh
+    window.history.replaceState({}, document.title);
     navigate(location.pathname, { replace: true, state: {} });
     loadData();
   };
@@ -315,11 +367,23 @@ export const POS: React.FC = () => {
                     <div className="flex-1">
                         <p className="font-medium text-slate-800 dark:text-white text-sm">{item.product.nome}</p>
                         <p className="text-xs text-slate-500">{item.variation.model_variant} | Tam: <b>{item.variation.size}</b></p>
-                        <p className="text-xs font-bold text-primary-600 mt-1">{formatCurrency(item.customPrice || item.variation.price_sale)}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                             <p className="text-xs font-bold text-primary-600">{formatCurrency(item.customPrice || item.variation.price_sale)}</p>
+                             {item.customPrice && item.customPrice !== item.variation.price_sale && (
+                                 <span className="text-[10px] line-through text-slate-400">{formatCurrency(item.variation.price_sale)}</span>
+                             )}
+                        </div>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
+                        <button 
+                            onClick={() => openDiscountModal(idx)}
+                            className="text-slate-400 hover:text-blue-500 p-1 rounded"
+                            title="Editar Preço (Desconto)"
+                        >
+                            <Tag size={16} />
+                        </button>
                         <span className="font-mono font-bold text-slate-700 dark:text-slate-300 text-sm">x{item.quantity}</span>
-                        <button onClick={() => removeFromCart(item.variation.id)} className="text-red-400 hover:text-red-600"><Trash size={16} /></button>
+                        <button onClick={() => removeFromCart(idx)} className="text-red-400 hover:text-red-600 p-1"><Trash size={16} /></button>
                     </div>
                 </div>
             ))}
@@ -377,6 +441,27 @@ export const POS: React.FC = () => {
                 </div>
             </div>
         </div>
+      )}
+      
+      {/* Discount / Custom Price Modal */}
+      {discountItemIndex !== null && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+              <div className="bg-white dark:bg-slate-800 rounded-lg p-6 w-80 shadow-2xl">
+                  <h4 className="font-bold mb-4 dark:text-white">Alterar Preço Unitário</h4>
+                  <p className="text-xs text-slate-500 mb-2">Preço de Venda Original: {formatCurrency(cart[discountItemIndex].variation.price_sale)}</p>
+                  <input 
+                      type="number" 
+                      autoFocus
+                      className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white mb-4 font-bold text-lg"
+                      value={discountValue}
+                      onChange={e => setDiscountValue(e.target.value)}
+                  />
+                  <div className="flex justify-end gap-2">
+                      <button onClick={() => setDiscountItemIndex(null)} className="px-3 py-2 text-slate-500">Cancelar</button>
+                      <button onClick={applyDiscount} className="px-3 py-2 bg-blue-600 text-white rounded font-bold">Aplicar</button>
+                  </div>
+              </div>
+          </div>
       )}
 
       {/* Payment Modal */}

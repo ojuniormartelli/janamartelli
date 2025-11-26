@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { migrations } from '../utils/database.sql';
-import { Copy, Check, CreditCard, Trash2, Plus, Save, Store, Palette, Image as ImageIcon, Upload, Loader, User, Lock, Shield } from 'lucide-react';
+import { Copy, Check, CreditCard, Trash2, Plus, Save, Store, Palette, Image as ImageIcon, Upload, Loader, User, Lock, Shield, DownloadCloud } from 'lucide-react';
 import { PaymentMethod, Profile } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -11,6 +11,7 @@ export const Settings: React.FC = () => {
   const [copied, setCopied] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'general' | 'users' | 'payments' | 'database'>('general');
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [backupLoading, setBackupLoading] = useState(false);
   
   // Store Settings
   const [storeSettings, setStoreSettings] = useState({
@@ -89,6 +90,63 @@ export const Settings: React.FC = () => {
           alert('Erro desconhecido no upload.');
       } finally {
           setUploadingLogo(false);
+      }
+  };
+
+  // --- BACKUP LOGIC ---
+  const handleFullBackup = async () => {
+      setBackupLoading(true);
+      try {
+          // Fetch all critical data
+          const [
+              { data: clients },
+              { data: products },
+              { data: variations },
+              { data: sales },
+              { data: saleItems },
+              { data: accounts },
+              { data: txs },
+              { data: methods }
+          ] = await Promise.all([
+              supabase.from('clients').select('*'),
+              supabase.from('products').select('*'),
+              supabase.from('estoque_tamanhos').select('*'),
+              supabase.from('vendas').select('*'),
+              supabase.from('venda_itens').select('*'),
+              supabase.from('bank_accounts').select('*'),
+              supabase.from('transactions').select('*'),
+              supabase.from('payment_methods').select('*')
+          ]);
+
+          const backupData = {
+              timestamp: new Date().toISOString(),
+              system: "PijamaManager Pro",
+              data: {
+                  clients: clients || [],
+                  products: products || [],
+                  variations: variations || [],
+                  sales: sales || [],
+                  saleItems: saleItems || [],
+                  accounts: accounts || [],
+                  transactions: txs || [],
+                  paymentMethods: methods || []
+              }
+          };
+
+          const jsonStr = JSON.stringify(backupData, null, 2);
+          const blob = new Blob([jsonStr], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `backup-pijama-manager-${new Date().toISOString().slice(0, 10)}.json`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+
+      } catch (e) {
+          alert("Erro ao gerar backup: " + e);
+      } finally {
+          setBackupLoading(false);
       }
   };
 
@@ -440,14 +498,33 @@ export const Settings: React.FC = () => {
           </div>
       )}
 
-      {/* --- ABA BANCO DE DADOS (MIGRATIONS) --- */}
+      {/* --- ABA BANCO DE DADOS (MIGRATIONS & BACKUP) --- */}
       {activeTab === 'database' && (
-          <div className="space-y-6">
-              <div className="flex justify-between items-center">
-                  <h3 className="text-lg font-bold dark:text-white">Atualizações do Sistema</h3>
+          <div className="space-y-8">
+              {/* Backup Section */}
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                      <div>
+                          <h3 className="text-lg font-bold text-blue-800 dark:text-blue-300 flex items-center"><Shield className="mr-2" size={20}/> Backup & Segurança</h3>
+                          <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">
+                              O banco de dados é hospedado na nuvem (Supabase) e possui backups automáticos na infraestrutura deles.
+                              Para sua segurança adicional, você pode baixar uma cópia completa dos dados (JSON) a qualquer momento.
+                          </p>
+                      </div>
+                      <button 
+                          onClick={handleFullBackup}
+                          disabled={backupLoading}
+                          className="px-6 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow flex items-center whitespace-nowrap disabled:opacity-50"
+                      >
+                          {backupLoading ? <Loader size={18} className="animate-spin mr-2"/> : <DownloadCloud size={18} className="mr-2"/>}
+                          Fazer Backup Completo (JSON)
+                      </button>
+                  </div>
               </div>
-              
+
+              {/* Migrations Section */}
               <div className="space-y-4">
+                  <h3 className="text-lg font-bold dark:text-white">Atualizações do Sistema (SQL)</h3>
                   {migrations.map((mig) => (
                       <div key={mig.id} className="bg-white dark:bg-slate-800 rounded-lg shadow border border-slate-200 dark:border-slate-700 overflow-hidden">
                           <div className="p-4 bg-slate-50 dark:bg-slate-900/50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
