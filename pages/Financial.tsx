@@ -144,6 +144,16 @@ export const Financial: React.FC = () => {
       fetchData();
   };
 
+  // --- Group Transactions by Date ---
+  const groupedTransactions = transactions.reduce((groups, tx) => {
+      const date = tx.date;
+      if (!groups[date]) groups[date] = [];
+      groups[date].push(tx);
+      return groups;
+  }, {} as Record<string, FinancialTransaction[]>);
+
+  const sortedDates = Object.keys(groupedTransactions).sort((a, b) => b.localeCompare(a));
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -180,7 +190,7 @@ export const Financial: React.FC = () => {
           ))}
       </div>
 
-      {/* --- EXTRATO --- */}
+      {/* --- EXTRATO DIÁRIO --- */}
       <div className="bg-white dark:bg-slate-800 rounded-lg shadow overflow-hidden">
           <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row justify-between items-center gap-4 bg-slate-50 dark:bg-slate-900/50">
               <h3 className="font-bold text-slate-700 dark:text-white flex items-center"><Calendar className="mr-2" size={18}/> Extrato de Movimentações</h3>
@@ -195,41 +205,51 @@ export const Financial: React.FC = () => {
               </div>
           </div>
 
-          <table className="w-full text-left text-sm">
-              <thead className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
-                  <tr>
-                      <th className="p-4">Data</th>
-                      <th className="p-4">Descrição</th>
-                      <th className="p-4">Categoria</th>
-                      <th className="p-4">Conta</th>
-                      <th className="p-4 text-right">Valor</th>
-                      <th className="p-4 w-10"></th>
-                  </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                  {loading ? <tr><td colSpan={6} className="p-6 text-center">Carregando...</td></tr> : 
-                   transactions.length === 0 ? <tr><td colSpan={6} className="p-6 text-center text-slate-500">Nenhum lançamento neste mês.</td></tr> :
-                   transactions.map(tx => (
-                      <tr key={tx.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                          <td className="p-4 text-slate-500">{new Date(tx.date + 'T12:00:00').toLocaleDateString()}</td>
-                          <td className="p-4 font-medium dark:text-white">{tx.description}</td>
-                          <td className="p-4 text-slate-500">
-                              <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs">{tx.category}</span>
-                          </td>
-                          <td className="p-4 text-slate-500">{tx.bank_account?.name}</td>
-                          <td className={`p-4 text-right font-bold ${tx.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
-                              {tx.type === 'income' ? '+' : '-'} {formatCurrency(tx.amount)}
-                          </td>
-                          <td className="p-4 text-center">
-                              <button onClick={() => handleDeleteTransaction(tx)} className="text-slate-300 hover:text-red-500">
-                                  <Trash2 size={16}/>
-                              </button>
-                          </td>
-                      </tr>
-                   ))
-                  }
-              </tbody>
-          </table>
+          <div className="flex-1 overflow-auto max-h-[600px]">
+              {loading ? <div className="p-6 text-center">Carregando...</div> : 
+               sortedDates.length === 0 ? <div className="p-6 text-center text-slate-500">Nenhum lançamento neste mês.</div> :
+               sortedDates.map(date => {
+                   const dayTxs = groupedTransactions[date];
+                   const dayIncome = dayTxs.filter(t => t.type === 'income').reduce((a, b) => a + b.amount, 0);
+                   const dayExpense = dayTxs.filter(t => t.type === 'expense').reduce((a, b) => a + b.amount, 0);
+
+                   return (
+                       <div key={date} className="border-b border-slate-100 dark:border-slate-700 last:border-0">
+                           <div className="bg-slate-50 dark:bg-slate-700/30 px-4 py-2 flex justify-between items-center">
+                               <span className="font-bold text-slate-700 dark:text-white text-sm">
+                                   {new Date(date + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}
+                               </span>
+                               <div className="text-xs font-mono space-x-3">
+                                   {dayIncome > 0 && <span className="text-green-600">Entradas: {formatCurrency(dayIncome)}</span>}
+                                   {dayExpense > 0 && <span className="text-red-600">Saídas: {formatCurrency(dayExpense)}</span>}
+                               </div>
+                           </div>
+                           <table className="w-full text-left text-sm">
+                              <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                                  {dayTxs.map(tx => (
+                                      <tr key={tx.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                                          <td className="p-4 font-medium dark:text-white w-1/3">{tx.description}</td>
+                                          <td className="p-4 text-slate-500 w-1/6">
+                                              <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs">{tx.category}</span>
+                                          </td>
+                                          <td className="p-4 text-slate-500 w-1/6">{tx.bank_account?.name}</td>
+                                          <td className={`p-4 text-right font-bold w-1/6 ${tx.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
+                                              {tx.type === 'income' ? '+' : '-'} {formatCurrency(tx.amount)}
+                                          </td>
+                                          <td className="p-4 text-center w-10">
+                                              <button onClick={() => handleDeleteTransaction(tx)} className="text-slate-300 hover:text-red-500">
+                                                  <Trash2 size={16}/>
+                                              </button>
+                                          </td>
+                                      </tr>
+                                  ))}
+                              </tbody>
+                           </table>
+                       </div>
+                   );
+               })
+              }
+          </div>
       </div>
 
       {/* --- MODAL NOVA TRANSAÇÃO --- */}

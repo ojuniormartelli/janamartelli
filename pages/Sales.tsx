@@ -32,7 +32,7 @@ export const Sales: React.FC = () => {
 
   const handleStatusChange = async (sale: Sale, newStatus: string) => {
       if (newStatus === 'Devolução') {
-          if (!confirm(`Confirmar devolução completa de ${sale.code}? Os itens voltarão ao estoque.`)) return;
+          if (!confirm(sale.status_label === 'Baixa' ? `Estornar esta baixa? O item voltará ao estoque e a despesa será removida.` : `Confirmar devolução completa de ${sale.code}? Os itens voltarão ao estoque.`)) return;
 
           // Return stock
           if (sale.items) {
@@ -43,10 +43,32 @@ export const Sales: React.FC = () => {
                  }
              }
           }
-          await supabase.from('vendas').update({ 
-              status_label: 'Devolução', 
-              payment_status: 'refunded' 
-            }).eq('id', sale.id);
+          
+          if (sale.status_label === 'Baixa') {
+              // If cancelling a LOSS/BAIXA, we should delete the financial transaction too
+              const { data: tx } = await supabase.from('transactions').select('*').ilike('description', `%${sale.code}%`).single();
+              if (tx) {
+                  // Revert balance
+                  const { data: acc } = await supabase.from('bank_accounts').select('*').eq('id', tx.account_id).single();
+                  if (acc) {
+                      await supabase.from('bank_accounts').update({ balance: acc.balance + tx.amount }).eq('id', acc.id);
+                  }
+                  // Delete tx
+                  await supabase.from('transactions').delete().eq('id', tx.id);
+              }
+              // We can delete the 'sale' record entirely for a reversed loss, or mark as refunded. Marking as refunded keeps history.
+              await supabase.from('vendas').update({ 
+                status_label: 'Devolução', 
+                payment_status: 'refunded',
+                observacoes: (sale.observacoes || '') + ' (Estornado)'
+              }).eq('id', sale.id);
+
+          } else {
+             await supabase.from('vendas').update({ 
+                status_label: 'Devolução', 
+                payment_status: 'refunded' 
+              }).eq('id', sale.id);
+          }
             
       } else if (sale.status_label === 'Condicional' && newStatus === 'Convertida') {
           // LOGIC: CONVERT CONDITIONAL TO SALE
@@ -105,7 +127,7 @@ export const Sales: React.FC = () => {
                     <tr>
                         <th className="p-4">Código</th>
                         <th className="p-4">Data</th>
-                        <th className="p-4">Cliente</th>
+                        <th className="p-4">Cliente/Obs</th>
                         <th className="p-4">Total</th>
                         <th className="p-4">Status</th>
                         <th className="p-4 text-center">Ações</th>
@@ -118,13 +140,16 @@ export const Sales: React.FC = () => {
                         <tr key={sale.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
                             <td className="p-4 font-mono font-bold dark:text-white">{sale.code || `ID-${sale.id}`}</td>
                             <td className="p-4 text-slate-500">{new Date(sale.created_at).toLocaleDateString()}</td>
-                            <td className="p-4 font-medium dark:text-slate-200">{sale.client?.full_name || 'N/A'}</td>
+                            <td className="p-4 font-medium dark:text-slate-200">
+                                {sale.client?.full_name || sale.observacoes || 'N/A'}
+                            </td>
                             <td className="p-4 font-bold text-slate-800 dark:text-white">{formatCurrency(sale.total_value)}</td>
                             <td className="p-4">
                                 <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${
                                     sale.status_label === 'Venda' ? 'bg-green-100 text-green-700' :
                                     sale.status_label === 'Condicional' ? 'bg-amber-100 text-amber-700' :
                                     sale.status_label === 'Convertida' ? 'bg-blue-100 text-blue-700' :
+                                    sale.status_label === 'Baixa' ? 'bg-orange-100 text-orange-700' :
                                     'bg-red-100 text-red-700'
                                 }`}>
                                     {sale.status_label}
@@ -151,8 +176,8 @@ export const Sales: React.FC = () => {
                     <div className="p-6">
                         <div className="flex justify-between mb-6">
                             <div>
-                                <p className="text-sm text-slate-500">Cliente</p>
-                                <p className="font-bold dark:text-white text-lg">{selectedSale.client?.full_name}</p>
+                                <p className="text-sm text-slate-500">{selectedSale.status_label === 'Baixa' ? 'Motivo' : 'Cliente'}</p>
+                                <p className="font-bold dark:text-white text-lg">{selectedSale.client?.full_name || selectedSale.observacoes}</p>
                             </div>
                             <div className="text-right">
                                 <p className="text-sm text-slate-500">Valor Total</p>
@@ -164,14 +189,13 @@ export const Sales: React.FC = () => {
                             <h4 className="text-sm font-bold mb-2 dark:text-slate-300">Itens</h4>
                             <ul className="space-y-2">
                                 {(selectedSale.items as any[])?.map((item: any, idx: number) => {
-                                    // Handle deeply nested join structure or flat structure depending on query
                                     const productName = item.product_variation?.products?.nome || item.product_variation?.model_variant || 'Item';
                                     const details = `${item.product_variation?.model_variant} - ${item.product_variation?.size}`;
                                     
                                     return (
                                         <li key={idx} className="flex justify-between text-sm dark:text-slate-200">
                                             <span>{item.quantity}x {productName} ({details})</span>
-                                            <span>{formatCurrency(item.unit_price * item.quantity)}</span>
+                                            <span>{formatCurrency(selectedSale.status_label === 'Baixa' ? item.original_cost : item.unit_price * item.quantity)}</span>
                                         </li>
                                     );
                                 })}
@@ -192,7 +216,7 @@ export const Sales: React.FC = () => {
                                     onClick={() => handleStatusChange(selectedSale, 'Devolução')}
                                     className="flex items-center px-4 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200"
                                 >
-                                    <RefreshCw size={18} className="mr-2"/> Devolver / Estornar
+                                    <RefreshCw size={18} className="mr-2"/> {selectedSale.status_label === 'Baixa' ? 'Estornar Baixa' : 'Devolver / Estornar'}
                                 </button>
                             )}
                         </div>

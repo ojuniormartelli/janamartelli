@@ -55,7 +55,7 @@ export interface Sale {
   payment_method: string; // Armazena o nome do método
   payment_status: 'paid' | 'pending' | 'refunded' | 'loss';
   status_label: 'Venda' | 'Condicional' | 'Baixa' | 'Devolução' | 'Convertida';
-  notes?: string;
+  observacoes?: string;
   client_id?: string;
   client?: Client;
   items?: SaleItem[];

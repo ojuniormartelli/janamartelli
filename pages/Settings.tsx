@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { migrations } from '../utils/database.sql';
-import { Copy, Check, CreditCard, Trash2, Plus, Save, Store, Palette, Image as ImageIcon, Upload, Loader, User, Lock, Shield, DownloadCloud } from 'lucide-react';
+import { Copy, Check, CreditCard, Trash2, Plus, Save, Store, Palette, Image as ImageIcon, Upload, Loader, User, Lock, Shield, DownloadCloud, RefreshCw } from 'lucide-react';
 import { PaymentMethod, Profile } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -12,6 +12,7 @@ export const Settings: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'general' | 'users' | 'payments' | 'database'>('general');
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [backupLoading, setBackupLoading] = useState(false);
+  const [syncLoading, setSyncLoading] = useState(false);
   
   // Store Settings
   const [storeSettings, setStoreSettings] = useState({
@@ -148,6 +149,59 @@ export const Settings: React.FC = () => {
       } finally {
           setBackupLoading(false);
       }
+  };
+
+  const handleSyncFinancial = async () => {
+    if (!confirm("Isso irá criar lançamentos financeiros para TODAS as vendas já realizadas e pagas que ainda não constam no extrato. Deseja continuar?")) return;
+    setSyncLoading(true);
+
+    try {
+        // 1. Get default account
+        const { data: defaultAccount } = await supabase.from('bank_accounts').select('*').eq('is_default', true).single();
+        const accountId = defaultAccount ? defaultAccount.id : (await supabase.from('bank_accounts').select('id').limit(1).single()).data?.id;
+
+        if (!accountId) throw new Error("Nenhuma conta bancária padrão encontrada.");
+
+        // 2. Get all PAID sales
+        const { data: sales } = await supabase.from('vendas').select('*').eq('payment_status', 'paid');
+        
+        // 3. Get existing transactions descriptions to avoid duplicates (naive check)
+        const { data: txs } = await supabase.from('transactions').select('description');
+        const existingDescs = new Set(txs?.map(t => t.description) || []);
+
+        let addedCount = 0;
+        let totalVal = 0;
+
+        if (sales) {
+            for (const sale of sales) {
+                const desc = `Venda ${sale.code} - ${sale.payment_method}`;
+                
+                if (!existingDescs.has(desc)) {
+                    await supabase.from('transactions').insert({
+                        description: desc,
+                        amount: sale.total_value,
+                        type: 'income',
+                        account_id: accountId,
+                        category: 'Vendas',
+                        date: new Date(sale.created_at).toISOString().slice(0, 10)
+                    });
+                    totalVal += sale.total_value;
+                    addedCount++;
+                }
+            }
+        }
+
+        if (addedCount > 0 && defaultAccount) {
+            await supabase.from('bank_accounts').update({ balance: defaultAccount.balance + totalVal }).eq('id', accountId);
+        }
+
+        alert(`Sincronização concluída! ${addedCount} vendas adicionadas ao financeiro.`);
+
+    } catch (e: any) {
+        alert("Erro na sincronização: " + e.message);
+    } finally {
+        setSyncLoading(false);
+    }
   };
 
   // --- USERS LOGIC ---
@@ -511,14 +565,24 @@ export const Settings: React.FC = () => {
                               Para sua segurança adicional, você pode baixar uma cópia completa dos dados (JSON) a qualquer momento.
                           </p>
                       </div>
-                      <button 
-                          onClick={handleFullBackup}
-                          disabled={backupLoading}
-                          className="px-6 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow flex items-center whitespace-nowrap disabled:opacity-50"
-                      >
-                          {backupLoading ? <Loader size={18} className="animate-spin mr-2"/> : <DownloadCloud size={18} className="mr-2"/>}
-                          Fazer Backup Completo (JSON)
-                      </button>
+                      <div className="flex flex-col gap-2">
+                        <button 
+                            onClick={handleFullBackup}
+                            disabled={backupLoading}
+                            className="px-6 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow flex items-center whitespace-nowrap disabled:opacity-50 justify-center"
+                        >
+                            {backupLoading ? <Loader size={18} className="animate-spin mr-2"/> : <DownloadCloud size={18} className="mr-2"/>}
+                            Fazer Backup Completo (JSON)
+                        </button>
+                        <button 
+                            onClick={handleSyncFinancial}
+                            disabled={syncLoading}
+                            className="px-6 py-2 bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200 rounded-lg font-bold hover:bg-slate-300 shadow flex items-center whitespace-nowrap disabled:opacity-50 justify-center text-sm"
+                        >
+                            {syncLoading ? <Loader size={16} className="animate-spin mr-2"/> : <RefreshCw size={16} className="mr-2"/>}
+                            Sincronizar Financeiro
+                        </button>
+                      </div>
                   </div>
               </div>
 

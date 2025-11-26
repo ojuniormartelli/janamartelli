@@ -262,14 +262,23 @@ export const Inventory: React.FC = () => {
   const handleReportLoss = async (variant: ProductVariation) => {
     if (!confirm(`Baixar 1 unidade defeituosa de "${variant.model_variant} - ${variant.size}"?`)) return;
     
+    // 0. Generate "B" Code
+    const { data: code } = await supabase.rpc('get_next_code', { prefix: 'B' });
+
     // 1. Create a "Loss" sale record for financial tracking in SALES History
-    const { data: lossSale } = await supabase.from('vendas').insert({
+    const { data: lossSale, error: saleError } = await supabase.from('vendas').insert({
+        code: code,
         total_value: variant.price_cost, // Record cost as value
         payment_status: 'loss',
         status_label: 'Baixa',
         payment_method: 'Perda',
         observacoes: `Baixa de item defeituoso: ${variant.sku}`
     }).select().single();
+
+    if (saleError) {
+        alert("Erro ao registrar baixa: " + saleError.message);
+        return;
+    }
 
     if (lossSale) {
         await supabase.from('venda_itens').insert({
@@ -287,7 +296,7 @@ export const Inventory: React.FC = () => {
 
         if (accountId) {
              await supabase.from('transactions').insert({
-                 description: `Baixa Estoque: ${variant.sku}`,
+                 description: `Baixa Estoque: ${code} - ${variant.sku}`,
                  amount: variant.price_cost,
                  type: 'expense',
                  account_id: accountId,
@@ -303,7 +312,10 @@ export const Inventory: React.FC = () => {
 
     // 3. Reduce Stock
     const { error } = await supabase.from('estoque_tamanhos').update({ quantity: variant.quantity - 1 }).eq('id', variant.id);
-    if (!error) fetchInventory();
+    if (!error) {
+        alert(`Baixa registrada com sucesso! Código: ${code}`);
+        fetchInventory();
+    }
   };
 
   const handleReplenish = async () => {
