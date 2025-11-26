@@ -34,3 +34,11 @@ export const maskPhone = (value: string) => {
 export const capitalizeName = (name: string) => {
   return name.toLowerCase().replace(/(?:^|\s)\S/g, (a) => a.toUpperCase());
 };
+
+export const getLocalDate = (date?: Date) => {
+  const d = date || new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};

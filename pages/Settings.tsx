@@ -5,6 +5,7 @@ import { migrations } from '../utils/database.sql';
 import { Copy, Check, CreditCard, Trash2, Plus, Save, Store, Palette, Image as ImageIcon, Upload, Loader, User, Lock, Shield, DownloadCloud, RefreshCw } from 'lucide-react';
 import { PaymentMethod, Profile } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { getLocalDate } from '../utils/formatters';
 
 export const Settings: React.FC = () => {
   const { user: currentUser } = useAuth();
@@ -177,13 +178,16 @@ export const Settings: React.FC = () => {
                 const desc = `Venda ${sale.code} - ${sale.payment_method}`;
                 
                 if (!existingDescs.has(desc)) {
+                    // Convert creation time to local date
+                    const saleDate = getLocalDate(new Date(sale.created_at));
+
                     await supabase.from('transactions').insert({
                         description: desc,
                         amount: sale.total_value,
                         type: 'income',
                         account_id: accountId,
                         category: 'Vendas',
-                        date: new Date(sale.created_at).toISOString().slice(0, 10)
+                        date: saleDate
                     });
                     totalVal += sale.total_value;
                     addedCount++;

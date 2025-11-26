@@ -3,7 +3,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { Product, ProductVariation } from '../types';
 import { ChevronDown, ChevronRight, Plus, AlertTriangle, FileSpreadsheet, Loader, Trash2, Edit2, X, Save, Search, RefreshCw, ArrowUpDown, Download } from 'lucide-react';
-import { formatCurrency, parseCurrencyString } from '../utils/formatters';
+import { formatCurrency, parseCurrencyString, getLocalDate } from '../utils/formatters';
 
 type SortField = 'modelo' | 'nome' | 'categoria' | 'stock';
 
@@ -301,7 +301,7 @@ export const Inventory: React.FC = () => {
                  type: 'expense',
                  account_id: accountId,
                  category: 'Perdas',
-                 date: new Date().toISOString().slice(0, 10)
+                 date: getLocalDate()
              });
              // Update account balance (reduce asset value)
              if (defaultAccount) {

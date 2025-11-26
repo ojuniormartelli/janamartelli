@@ -2,16 +2,16 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { BankAccount, FinancialTransaction } from '../types';
-import { formatCurrency } from '../utils/formatters';
-import { Wallet, TrendingUp, TrendingDown, Plus, Trash2, Calendar, Filter, Save, X, Banknote } from 'lucide-react';
+import { formatCurrency, getLocalDate } from '../utils/formatters';
+import { Wallet, TrendingUp, TrendingDown, Plus, Trash2, Calendar, Filter, Save, X, Banknote, RefreshCw } from 'lucide-react';
 
 export const Financial: React.FC = () => {
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Filters
-  const [filterMonth, setFilterMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
+  // Filters - use local date for current month
+  const [filterMonth, setFilterMonth] = useState(getLocalDate().slice(0, 7)); // YYYY-MM
   const [totalBalance, setTotalBalance] = useState(0);
 
   // Modals
@@ -25,7 +25,7 @@ export const Financial: React.FC = () => {
       type: 'income' as 'income' | 'expense',
       account_id: '',
       category: '',
-      date: new Date().toISOString().slice(0, 10)
+      date: getLocalDate()
   });
 
   const [newAccount, setNewAccount] = useState({
@@ -55,7 +55,11 @@ export const Financial: React.FC = () => {
 
     // Fetch Transactions for selected month
     const startOfMonth = `${filterMonth}-01`;
-    const endOfMonth = `${filterMonth}-31`;
+    // Simple way to get end of month, or just query by prefix for simplicity if formats align
+    const year = parseInt(filterMonth.split('-')[0]);
+    const month = parseInt(filterMonth.split('-')[1]);
+    const lastDay = new Date(year, month, 0).getDate();
+    const endOfMonth = `${filterMonth}-${lastDay}`;
 
     const { data: txData } = await supabase
         .from('transactions')
@@ -99,7 +103,7 @@ export const Financial: React.FC = () => {
       }
 
       setIsTxModalOpen(false);
-      setNewTx({ description: '', amount: '', type: 'income', account_id: accounts[0]?.id.toString() || '', category: '', date: new Date().toISOString().slice(0, 10) });
+      setNewTx({ description: '', amount: '', type: 'income', account_id: accounts[0]?.id.toString() || '', category: '', date: getLocalDate() });
       fetchData();
   };
 
@@ -162,6 +166,9 @@ export const Financial: React.FC = () => {
           <p className="text-slate-500 text-sm">Gerencie contas, entradas e saídas</p>
         </div>
         <div className="flex gap-2">
+            <button onClick={fetchData} className="p-2 text-slate-500 hover:text-primary-600 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg" title="Atualizar">
+                <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+            </button>
             <button onClick={() => setIsAccountModalOpen(true)} className="px-4 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-600 dark:text-white text-sm font-medium flex items-center hover:bg-slate-50">
                 <Banknote className="mr-2" size={18}/> Nova Conta
             </button>

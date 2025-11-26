@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Product, CartItem, Client, ProductVariation, PaymentMethod } from '../types';
 import { Search, ShoppingBag, Trash, UserPlus, CheckCircle, X, Save, User, Mail, MapPin, AlertCircle, Tag } from 'lucide-react';
-import { formatCurrency, maskCPF, maskPhone } from '../utils/formatters';
+import { formatCurrency, maskCPF, maskPhone, getLocalDate } from '../utils/formatters';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -248,7 +248,7 @@ export const POS: React.FC = () => {
                  type: 'income',
                  account_id: accountId,
                  category: 'Vendas',
-                 date: new Date().toISOString().slice(0, 10)
+                 date: getLocalDate()
              });
              // Update account balance
              if (defaultAccount) {
