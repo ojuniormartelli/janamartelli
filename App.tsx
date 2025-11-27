@@ -12,6 +12,7 @@ import { Clients } from './pages/Clients';
 import { Sales } from './pages/Sales';
 import { Login } from './pages/Login';
 
+// Componente Wrapper para rotas protegidas
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { loading, user } = useAuth();
   
@@ -35,12 +36,23 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   return <Layout>{children}</Layout>;
 };
 
-const AppRoutes = () => {
-    const { user } = useAuth();
+// Componente Wrapper para a rota de Login (Redireciona se já logado)
+const LoginRoute = () => {
+    const { user, loading } = useAuth();
+    
+    if (loading) return null;
+    
+    if (user) {
+        return <Navigate to="/" replace />;
+    }
+    
+    return <Login />;
+};
 
+const AppRoutes = () => {
     return (
         <Routes>
-            <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
+            <Route path="/login" element={<LoginRoute />} />
             
             <Route path="/" element={<ProtectedRoute><POS /></ProtectedRoute>} />
             <Route path="/financial" element={<ProtectedRoute><Financial /></ProtectedRoute>} />

@@ -3,18 +3,47 @@ import { createClient } from '@supabase/supabase-js';
 
 // Utilitário para ler variáveis de ambiente de forma segura no Vite
 // Suporta tanto VITE_ quanto NEXT_PUBLIC_ para facilitar deploy na Vercel
-const getEnvVar = (key: string) => {
-    try {
+const getUrl = () => {
+    // Verifica import.meta.env (Vite Standard)
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && import.meta.env) {
         // @ts-ignore
-        return import.meta.env?.[key] || import.meta.env?.[`NEXT_PUBLIC_${key.replace('VITE_', '')}`];
-    } catch {
-        return undefined;
+        if (import.meta.env.VITE_SUPABASE_URL) return import.meta.env.VITE_SUPABASE_URL;
+        // @ts-ignore
+        if (import.meta.env.NEXT_PUBLIC_SUPABASE_URL) return import.meta.env.NEXT_PUBLIC_SUPABASE_URL;
     }
+    // Verifica process.env (Fallback / Compatibilidade)
+    // @ts-ignore
+    if (typeof process !== 'undefined' && process.env) {
+        // @ts-ignore
+        if (process.env.VITE_SUPABASE_URL) return process.env.VITE_SUPABASE_URL;
+        // @ts-ignore
+        if (process.env.NEXT_PUBLIC_SUPABASE_URL) return process.env.NEXT_PUBLIC_SUPABASE_URL;
+    }
+    return '';
 };
 
-// 1. Tenta buscar das Variáveis de Ambiente (Configuração Global do Servidor/Vercel)
-const envUrl = getEnvVar('VITE_SUPABASE_URL');
-const envKey = getEnvVar('VITE_SUPABASE_ANON_KEY');
+// Função para obter Key explicitamente
+const getKey = () => {
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && import.meta.env) {
+        // @ts-ignore
+        if (import.meta.env.VITE_SUPABASE_ANON_KEY) return import.meta.env.VITE_SUPABASE_ANON_KEY;
+        // @ts-ignore
+        if (import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) return import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    }
+    // @ts-ignore
+    if (typeof process !== 'undefined' && process.env) {
+        // @ts-ignore
+        if (process.env.VITE_SUPABASE_ANON_KEY) return process.env.VITE_SUPABASE_ANON_KEY;
+        // @ts-ignore
+        if (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    }
+    return '';
+};
+
+const envUrl = getUrl();
+const envKey = getKey();
 
 // 2. Tenta buscar do LocalStorage (Configuração Manual Local - Fallback)
 const storedUrl = localStorage.getItem('custom_supabase_url');
