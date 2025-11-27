@@ -1,9 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { Lock, User, Eye, EyeOff, AlertTriangle, Database, X, Check, Copy } from 'lucide-react';
+import { Lock, User, Eye, EyeOff, AlertTriangle, Database, X, Check, Copy, Wifi, WifiOff } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { dbSetupScript } from '../utils/database.sql';
+import { isDbConfigured, supabase } from '../supabaseClient';
 
 export const Login: React.FC = () => {
   const { signIn } = useAuth();
@@ -16,11 +17,39 @@ export const Login: React.FC = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Connection Check
+  const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'error'>('checking');
+
   // Install Modal State
   const [showInstallModal, setShowInstallModal] = useState(false);
   const [masterPass, setMasterPass] = useState('');
   const [showSql, setShowSql] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+      checkConnection();
+  }, []);
+
+  const checkConnection = async () => {
+      if (!isDbConfigured) {
+          setConnectionStatus('error');
+          return;
+      }
+      try {
+          // Tenta uma query leve para validar conexão
+          const { error } = await supabase.from('store_settings').select('id').limit(1);
+          // Erro PGRST301 ou 404 geralmente significa que conectou mas tabela não existe (o que é normal antes do SQL)
+          if (!error || error.code === 'PGRST301' || error.code === '42P01') { 
+             setConnectionStatus('connected');
+          } else if (error.message && (error.message.includes('fetch') || error.code === '500')) {
+             setConnectionStatus('error');
+          } else {
+             setConnectionStatus('connected');
+          }
+      } catch (e) {
+          setConnectionStatus('error');
+      }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,6 +72,7 @@ export const Login: React.FC = () => {
   };
 
   const handleVerifyMasterPass = () => {
+      // Senha Mestra Hardcoded para liberar o SQL sem acesso ao banco
       if (masterPass === 'Gs020185*') {
           setShowSql(true);
       } else {
@@ -128,10 +158,18 @@ export const Login: React.FC = () => {
           </button>
         </form>
 
-        <div className="mt-8 text-center">
+        <div className="mt-8 pt-6 border-t dark:border-slate-700 flex justify-between items-center">
+            <div className="flex items-center text-xs text-slate-400">
+                {connectionStatus === 'connected' ? (
+                    <span className="flex items-center text-green-600"><Wifi size={12} className="mr-1"/> Conectado</span>
+                ) : (
+                    <span className="flex items-center text-red-500"><WifiOff size={12} className="mr-1"/> Sem Conexão</span>
+                )}
+            </div>
+            
             <button 
                 onClick={handleOpenInstall}
-                className="text-xs text-slate-400 hover:text-primary-500 flex items-center justify-center mx-auto gap-1 transition-colors"
+                className="text-xs text-slate-400 hover:text-primary-500 flex items-center justify-center gap-1 transition-colors"
             >
                 <Database size={12} /> Instalação / SQL
             </button>
@@ -154,7 +192,7 @@ export const Login: React.FC = () => {
                       {!showSql ? (
                           <div className="space-y-4">
                               <p className="text-slate-600 dark:text-slate-300 text-sm">
-                                  Para visualizar o Script SQL de instalação, insira a <b>Senha Mestra</b> do sistema.
+                                  Para visualizar o Script SQL de instalação ou configurar a conexão, insira a <b>Senha Mestra</b>.
                               </p>
                               <div>
                                   <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Senha Mestra</label>
@@ -170,26 +208,29 @@ export const Login: React.FC = () => {
                                   onClick={handleVerifyMasterPass}
                                   className="w-full py-2 bg-slate-800 text-white rounded font-bold hover:bg-slate-700"
                               >
-                                  Acessar SQL
+                                  Acessar Configurações
                               </button>
                           </div>
                       ) : (
-                          <div className="space-y-4">
-                              <div className="bg-green-50 text-green-800 p-3 rounded border border-green-200 text-sm">
-                                  <p className="font-bold">Acesso Liberado.</p>
-                                  <p>Copie o código abaixo e execute no SQL Editor do seu projeto Supabase/Neon.</p>
-                              </div>
-                              <div className="relative">
-                                  <pre className="bg-slate-900 text-green-400 p-4 rounded-lg text-xs font-mono overflow-auto max-h-96 select-all">
-                                      {dbSetupScript}
-                                  </pre>
-                                  <button 
-                                      onClick={handleCopySql}
-                                      className="absolute top-2 right-2 px-3 py-1 bg-white/10 hover:bg-white/20 text-white rounded text-xs flex items-center backdrop-blur-sm"
-                                  >
-                                      {copied ? <Check size={14} className="mr-1"/> : <Copy size={14} className="mr-1"/>}
-                                      {copied ? 'Copiado' : 'Copiar'}
-                                  </button>
+                          <div className="space-y-6">
+                              {/* Seção de SQL */}
+                              <div className="space-y-2">
+                                  <h4 className="font-bold text-sm dark:text-white">1. Script de Instalação (SQL)</h4>
+                                  <div className="bg-green-50 text-green-800 p-3 rounded border border-green-200 text-xs">
+                                      Copie o código abaixo e execute no SQL Editor do Supabase/Neon para criar as tabelas e o usuário admin.
+                                  </div>
+                                  <div className="relative">
+                                      <pre className="bg-slate-900 text-green-400 p-4 rounded-lg text-xs font-mono overflow-auto max-h-60 select-all">
+                                          {dbSetupScript}
+                                      </pre>
+                                      <button 
+                                          onClick={handleCopySql}
+                                          className="absolute top-2 right-2 px-3 py-1 bg-white/10 hover:bg-white/20 text-white rounded text-xs flex items-center backdrop-blur-sm"
+                                      >
+                                          {copied ? <Check size={14} className="mr-1"/> : <Copy size={14} className="mr-1"/>}
+                                          {copied ? 'Copiado' : 'Copiar'}
+                                      </button>
+                                  </div>
                               </div>
                           </div>
                       )}

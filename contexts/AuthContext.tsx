@@ -33,10 +33,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const signIn = async (username: string, password: string) => {
+    // Trim credentials to avoid space errors
+    const safeUser = username.trim();
+    const safePass = password.trim();
+
     // 1. MODO BOOTSTRAP (Sem Banco de Dados Configurado)
     if (!isDbConfigured) {
-        if (username === 'admin' && password === '123456') {
-            const bootstrapUser: Profile = {
+        // Fallback apenas para uso local/manual antes de configurar o banco
+        if (safeUser === 'admin' && safePass === '123456') { 
+             const bootstrapUser: Profile = {
                 id: 'bootstrap',
                 username: 'admin',
                 role: 'admin',
@@ -46,7 +51,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             localStorage.setItem('pijama_user', JSON.stringify(bootstrapUser));
             return { error: null };
         } else {
-            return { error: 'Credenciais inválidas para configuração inicial.' };
+            return { error: 'Credenciais inválidas ou banco não configurado.' };
         }
     }
 
@@ -56,14 +61,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const { data, error } = await supabase
             .from('profiles')
             .select('*')
-            .eq('username', username)
-            // Note: In production, passwords should be hashed (e.g. bcrypt). 
-            // We are comparing plain text as requested for this custom implementation.
-            .eq('password', password) 
+            .eq('username', safeUser)
+            .eq('password', safePass) 
             .single();
 
         if (error || !data) {
-            return { error: 'Usuário ou senha incorretos' };
+            return { error: 'Usuário ou senha incorretos (ou erro de conexão)' };
         }
 
         const profile: Profile = data;
@@ -72,7 +75,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { error: null };
 
     } catch (e) {
-        return { error: e };
+        return { error: 'Erro de conexão ao tentar logar.' };
     }
   };
 
