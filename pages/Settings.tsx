@@ -20,7 +20,8 @@ import {
   X,
   Key,
   Eye,
-  EyeOff
+  EyeOff,
+  Eraser
 } from 'lucide-react';
 
 export const Settings: React.FC = () => {
@@ -187,6 +188,11 @@ export const Settings: React.FC = () => {
       window.location.reload();
   };
 
+  const handleClearConnectionFields = () => {
+      setDbUrl('');
+      setDbKey('');
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -321,13 +327,15 @@ export const Settings: React.FC = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Project URL</label>
-                          <input 
-                              type="text"
-                              value={dbUrl}
-                              onChange={(e) => setDbUrl(e.target.value)}
-                              className="w-full p-2 bg-white dark:bg-slate-800 border rounded text-slate-600 dark:text-slate-300 text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                              placeholder="https://seu-projeto.supabase.co"
-                          />
+                          <div className="flex gap-2">
+                            <input 
+                                type="text"
+                                value={dbUrl}
+                                onChange={(e) => setDbUrl(e.target.value)}
+                                className="w-full p-2 bg-white dark:bg-slate-800 border rounded text-slate-600 dark:text-slate-300 text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                placeholder="https://seu-projeto.supabase.co"
+                            />
+                          </div>
                       </div>
                       <div>
                           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">API Key (Anon)</label>
@@ -352,6 +360,13 @@ export const Settings: React.FC = () => {
                   
                   <div className="mt-4 flex justify-end gap-3">
                       <button 
+                          onClick={handleClearConnectionFields}
+                          className="px-4 py-2 bg-white border dark:bg-slate-800 dark:border-slate-600 text-slate-500 hover:bg-slate-100 rounded text-sm font-medium flex items-center transition-colors"
+                          title="Limpar campos de digitação"
+                      >
+                          <Eraser size={16} className="mr-2"/> Limpar Campos
+                      </button>
+                      <button 
                           onClick={() => {
                               if(confirm('Isso desconectará o banco atual e limpará as chaves do navegador. Continuar?')) {
                                   resetDatabaseConfig();
@@ -359,7 +374,7 @@ export const Settings: React.FC = () => {
                           }}
                           className="px-4 py-2 bg-red-50 text-red-600 hover:bg-red-100 rounded text-sm font-bold flex items-center transition-colors"
                       >
-                          <X size={16} className="mr-2"/> Desconectar / Limpar
+                          <X size={16} className="mr-2"/> Desconectar
                       </button>
                       <button 
                           onClick={handleSaveConnection}

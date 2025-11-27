@@ -155,33 +155,12 @@ CREATE TABLE public.transactions (
 );
 
 -- 4. STORAGE (IMAGENS)
--- Nota: Em alguns provedores Postgres puros (Neon sem Supabase), o storage pode não existir.
--- O comando abaixo tenta criar se a extensão existir.
-CREATE SCHEMA IF NOT EXISTS storage;
-CREATE TABLE IF NOT EXISTS storage.buckets (
-  id text NOT NULL PRIMARY KEY,
-  name text NOT NULL,
-  owner uuid,
-  created_at timestamptz DEFAULT now(),
-  updated_at timestamptz DEFAULT now(),
-  public boolean DEFAULT FALSE
-);
-CREATE TABLE IF NOT EXISTS storage.objects (
-  id uuid NOT NULL DEFAULT uuid_generate_v4() PRIMARY KEY,
-  bucket_id text,
-  name text,
-  owner uuid,
-  created_at timestamptz DEFAULT now(),
-  updated_at timestamptz DEFAULT now(),
-  last_accessed_at timestamptz DEFAULT now(),
-  metadata jsonb,
-  path_tokens text[] GENERATED ALWAYS AS (string_to_array(name, '/')) STORED
-);
+-- Nota: O Schema 'storage' e a tabela 'buckets' são gerenciados internamente pelo Supabase.
+-- Apenas inserimos o bucket se ele não existir.
 INSERT INTO storage.buckets (id, name, public) VALUES ('store-assets', 'store-assets', true) ON CONFLICT (id) DO NOTHING;
 
 
 -- 5. SEGURANÇA (RLS PÚBLICO - MODO MULTI-TENANT SIMPLIFICADO)
--- Habilita RLS mas cria politica publica para facilitar o setup inicial
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Public Access Profiles" ON profiles;
 CREATE POLICY "Public Access Profiles" ON profiles FOR ALL USING (true) WITH CHECK (true);
@@ -243,9 +222,9 @@ ON CONFLICT DO NOTHING;
 
 export const migrations: Migration[] = [
     {
-        id: 'install_neon_v1',
-        date: '2025-02-25 15:00',
-        description: 'Instalação Completa (Neon/Postgres)',
+        id: 'install_neon_v2',
+        date: '2025-02-25 16:00',
+        description: 'Instalação Completa (Neon/Postgres) - Fix Storage Permissions',
         sql: fullInstallScript
     }
 ];
