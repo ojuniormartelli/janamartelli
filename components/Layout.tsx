@@ -62,20 +62,21 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       }
   };
 
-  const handleUpdateAdmin = async () => {
+  const handleCreateNewAdmin = async () => {
       if (!newAdminUser || !newAdminPass) return alert("Preencha todos os campos");
       if (newAdminPass.length < 6) return alert("Senha muito curta");
 
-      // 1. Create new admin user or update existing
-      const { error } = await supabase.from('profiles').update({
+      // 1. Create NEW admin user
+      const { error } = await supabase.from('profiles').insert({
           username: newAdminUser,
-          password: newAdminPass
-      }).eq('username', 'admin');
+          password: newAdminPass,
+          role: 'admin'
+      });
 
       if (error) {
-          alert("Erro ao atualizar: " + error.message);
+          alert("Erro ao criar novo usuário: " + error.message);
       } else {
-          alert("Usuário atualizado com sucesso! Por favor, faça login com as novas credenciais.");
+          alert("Novo usuário administrador criado com sucesso! Por favor, faça login com ele.");
           await signOut();
       }
   };
@@ -143,14 +144,13 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                       <ShieldAlert size={48} className="mx-auto text-red-500 mb-2"/>
                       <h2 className="text-2xl font-bold text-slate-800 dark:text-white">Ação Necessária</h2>
                       <p className="text-slate-600 dark:text-slate-300 mt-2">
-                          Por segurança, você deve alterar o usuário e senha padrão agora.
-                          O usuário 'admin' será renomeado.
+                          Você está usando a conta de instalação padrão. Por segurança, crie agora o seu usuário administrador pessoal.
                       </p>
                   </div>
                   
                   <div className="space-y-4">
                       <div>
-                          <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Novo Nome de Usuário</label>
+                          <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Seu Nome de Usuário</label>
                           <input 
                               className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                               placeholder="Ex: seu.nome"
@@ -158,7 +158,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                           />
                       </div>
                       <div>
-                          <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Nova Senha</label>
+                          <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Sua Senha</label>
                           <input 
                               type="text"
                               className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white"
@@ -167,10 +167,10 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                           />
                       </div>
                       <button 
-                          onClick={handleUpdateAdmin}
+                          onClick={handleCreateNewAdmin}
                           className="w-full py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 shadow-lg mt-4"
                       >
-                          Atualizar e Re-logar
+                          Criar Usuário e Acessar
                       </button>
                   </div>
               </div>

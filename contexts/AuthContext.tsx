@@ -51,11 +51,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     // 2. MODO PRODUÇÃO (Banco Configurado)
-    // Segurança: Bloquear explicitamente a senha de instalação se tentada em produção
-    if (password === '123456') {
-        return { error: 'Acesso negado: Credencial de instalação não permitida em produção.' };
-    }
-
     try {
         // Real database check
         const { data, error } = await supabase

@@ -13,9 +13,8 @@ const getEnvVar = (key: string) => {
 };
 
 // 1. Tenta buscar das Variáveis de Ambiente (Configuração Global do Servidor/Vercel)
-// Aceita VITE_SUPABASE_URL ou NEXT_PUBLIC_SUPABASE_URL
-const envUrl = getEnvVar('VITE_SUPABASE_URL') || getEnvVar('NEXT_PUBLIC_SUPABASE_URL');
-const envKey = getEnvVar('VITE_SUPABASE_ANON_KEY') || getEnvVar('NEXT_PUBLIC_SUPABASE_ANON_KEY');
+const envUrl = getEnvVar('VITE_SUPABASE_URL');
+const envKey = getEnvVar('VITE_SUPABASE_ANON_KEY');
 
 // 2. Tenta buscar do LocalStorage (Configuração Manual Local - Fallback)
 const storedUrl = localStorage.getItem('custom_supabase_url');
