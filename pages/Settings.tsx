@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase, resetDatabaseConfig } from '../supabaseClient';
 import { migrations } from '../utils/database.sql';
+import { Profile } from '../types';
 import { 
   Server, 
   RefreshCw, 
@@ -11,11 +12,17 @@ import {
   Check, 
   Copy, 
   Save, 
-  Building2 
+  Building2,
+  Users,
+  Plus,
+  Trash2,
+  Edit2,
+  X,
+  Key
 } from 'lucide-react';
 
 export const Settings: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'general' | 'database'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'database'>('general');
   const [loading, setLoading] = useState(false);
   
   // Store Settings State
@@ -26,6 +33,12 @@ export const Settings: React.FC = () => {
     logo_url: ''
   });
 
+  // Users Tab State
+  const [users, setUsers] = useState<Profile[]>([]);
+  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<Profile | null>(null);
+  const [userForm, setUserForm] = useState({ username: '', password: '', role: 'employee' });
+
   // Database Tab State
   const [backupLoading, setBackupLoading] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
@@ -33,13 +46,19 @@ export const Settings: React.FC = () => {
 
   useEffect(() => {
     fetchSettings();
-  }, []);
+    if (activeTab === 'users') fetchUsers();
+  }, [activeTab]);
 
   const fetchSettings = async () => {
     setLoading(true);
     const { data } = await supabase.from('store_settings').select('*').single();
     if (data) setStoreSettings(data);
     setLoading(false);
+  };
+
+  const fetchUsers = async () => {
+      const { data } = await supabase.from('profiles').select('*').order('username');
+      if(data) setUsers(data as any);
   };
 
   const handleSaveSettings = async () => {
@@ -53,6 +72,38 @@ export const Settings: React.FC = () => {
     setLoading(false);
   };
 
+  // --- USER ACTIONS ---
+  const handleOpenUserModal = (user?: Profile) => {
+      if (user) {
+          setEditingUser(user);
+          setUserForm({ username: user.username, password: user.password || '', role: user.role });
+      } else {
+          setEditingUser(null);
+          setUserForm({ username: '', password: '', role: 'employee' });
+      }
+      setIsUserModalOpen(true);
+  };
+
+  const handleSaveUser = async () => {
+      if(!userForm.username || !userForm.password) return alert("Usuário e Senha obrigatórios");
+
+      if (editingUser) {
+          await supabase.from('profiles').update(userForm).eq('id', editingUser.id);
+      } else {
+          const { error } = await supabase.from('profiles').insert(userForm);
+          if(error) return alert("Erro ao criar usuário (nome já existe?)");
+      }
+      setIsUserModalOpen(false);
+      fetchUsers();
+  };
+
+  const handleDeleteUser = async (id: string) => {
+      if(!confirm("Excluir usuário?")) return;
+      await supabase.from('profiles').delete().eq('id', id);
+      fetchUsers();
+  };
+
+  // --- DB ACTIONS ---
   const handleFullBackup = async () => {
     setBackupLoading(true);
     try {
@@ -80,10 +131,38 @@ export const Settings: React.FC = () => {
 
   const handleSyncFinancial = async () => {
     setSyncLoading(true);
-    // Simulation of a sync process
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    // Lógica para sincronizar vendas passadas que não tem transação
+    const { data: sales } = await supabase.from('vendas').select('*').in('status_label', ['Venda', 'Baixa']);
+    
+    if (sales) {
+        const { data: defaultAccount } = await supabase.from('bank_accounts').select('*').eq('is_default', true).single();
+        const accId = defaultAccount?.id;
+
+        if (accId) {
+            let count = 0;
+            for (const sale of sales) {
+                // Verifica se já existe transação
+                const { data: existing } = await supabase.from('transactions').select('id').ilike('description', `%${sale.code}%`).single();
+                if (!existing) {
+                    const isLoss = sale.status_label === 'Baixa';
+                    await supabase.from('transactions').insert({
+                        description: `${isLoss ? 'Baixa Estoque' : 'Venda'} ${sale.code}`,
+                        amount: sale.total_value,
+                        type: isLoss ? 'expense' : 'income',
+                        account_id: accId,
+                        category: isLoss ? 'Perdas' : 'Vendas',
+                        date: sale.created_at.split('T')[0] // Use original date
+                    });
+                    count++;
+                }
+            }
+            if(count > 0) alert(`${count} registros sincronizados!`);
+            else alert("Tudo já está sincronizado.");
+        } else {
+            alert("Crie uma conta bancária padrão primeiro.");
+        }
+    }
     setSyncLoading(false);
-    alert('Sincronização realizada com sucesso!');
   };
 
   const copyScript = (sql: string, id: string) => {
@@ -106,6 +185,12 @@ export const Settings: React.FC = () => {
             Geral
         </button>
         <button 
+            onClick={() => setActiveTab('users')}
+            className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors ${activeTab === 'users' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+        >
+            Usuários
+        </button>
+        <button 
             onClick={() => setActiveTab('database')}
             className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors ${activeTab === 'database' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
         >
@@ -113,6 +198,7 @@ export const Settings: React.FC = () => {
         </button>
       </div>
 
+      {/* --- ABA GERAL --- */}
       {activeTab === 'general' && (
           <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-6 max-w-2xl">
               <h3 className="font-bold text-lg mb-4 dark:text-white flex items-center"><Building2 className="mr-2" size={20}/> Dados da Loja</h3>
@@ -164,7 +250,48 @@ export const Settings: React.FC = () => {
           </div>
       )}
 
-      {/* --- ABA BANCO DE DADOS (MIGRATIONS & BACKUP & CONFIG) --- */}
+      {/* --- ABA USUÁRIOS --- */}
+      {activeTab === 'users' && (
+          <div className="bg-white dark:bg-slate-800 rounded-lg shadow overflow-hidden">
+              <div className="p-4 border-b dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
+                  <h3 className="font-bold dark:text-white flex items-center"><Users className="mr-2" size={20}/> Gerenciar Acesso</h3>
+                  <button onClick={() => handleOpenUserModal()} className="flex items-center px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-700 font-bold text-sm">
+                      <Plus size={16} className="mr-2"/> Novo Usuário
+                  </button>
+              </div>
+              <table className="w-full text-left">
+                  <thead className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-sm">
+                      <tr>
+                          <th className="p-4">Usuário</th>
+                          <th className="p-4">Permissão</th>
+                          <th className="p-4">Senha</th>
+                          <th className="p-4 text-center">Ações</th>
+                      </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                      {users.map(u => (
+                          <tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                              <td className="p-4 font-bold dark:text-white">{u.username}</td>
+                              <td className="p-4">
+                                  <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${u.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                                      {u.role}
+                                  </span>
+                              </td>
+                              <td className="p-4 font-mono text-slate-400 text-xs">••••••</td>
+                              <td className="p-4 text-center">
+                                  <div className="flex justify-center gap-2">
+                                      <button onClick={() => handleOpenUserModal(u)} className="p-2 text-blue-600 hover:bg-blue-50 rounded"><Edit2 size={16}/></button>
+                                      <button onClick={() => handleDeleteUser(u.id)} className="p-2 text-red-600 hover:bg-red-50 rounded"><Trash2 size={16}/></button>
+                                  </div>
+                              </td>
+                          </tr>
+                      ))}
+                  </tbody>
+              </table>
+          </div>
+      )}
+
+      {/* --- ABA BANCO DE DADOS --- */}
       {activeTab === 'database' && (
           <div className="space-y-8">
               
@@ -269,6 +396,51 @@ export const Settings: React.FC = () => {
                           </div>
                       </div>
                   ))}
+              </div>
+          </div>
+      )}
+
+      {/* MODAL USUÁRIO */}
+      {isUserModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
+                  <div className="p-6 border-b dark:border-slate-700 flex justify-between items-center">
+                      <h3 className="text-lg font-bold dark:text-white">
+                          {editingUser ? 'Editar Usuário' : 'Novo Usuário'}
+                      </h3>
+                      <button onClick={() => setIsUserModalOpen(false)}><X size={20} className="text-slate-400"/></button>
+                  </div>
+                  <div className="p-6 space-y-4">
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Usuário (Login)</label>
+                          <input 
+                              value={userForm.username}
+                              onChange={e => setUserForm({...userForm, username: e.target.value})}
+                              className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                          />
+                      </div>
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Senha</label>
+                          <input 
+                              value={userForm.password}
+                              onChange={e => setUserForm({...userForm, password: e.target.value})}
+                              className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                              placeholder={editingUser ? 'Deixe em branco para manter' : ''}
+                          />
+                      </div>
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Permissão</label>
+                          <select 
+                              value={userForm.role}
+                              onChange={e => setUserForm({...userForm, role: e.target.value as any})}
+                              className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                          >
+                              <option value="admin">Admin (Acesso Total)</option>
+                              <option value="employee">Funcionário (Restrito)</option>
+                          </select>
+                      </div>
+                      <button onClick={handleSaveUser} className="w-full py-2 bg-primary-600 text-white rounded font-bold mt-4">Salvar</button>
+                  </div>
               </div>
           </div>
       )}
