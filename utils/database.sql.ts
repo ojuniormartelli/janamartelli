@@ -8,7 +8,7 @@ export interface Migration {
 
 const fullInstallScript = `
 -- =================================================================
--- INSTALAÇÃO COMPLETA (LIMPEZA + ESTRUTURA)
+-- INSTALAÇÃO COMPLETA (NEON / POSTGRES)
 -- =================================================================
 
 -- 1. LIMPEZA (DROP)
@@ -34,7 +34,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE public.profiles (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
   username TEXT UNIQUE NOT NULL,
-  password TEXT DEFAULT '123456', -- Senha simples
+  password TEXT DEFAULT '123456', -- Senha Padrão
   role TEXT CHECK (role IN ('admin', 'employee')) DEFAULT 'admin',
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -155,12 +155,33 @@ CREATE TABLE public.transactions (
 );
 
 -- 4. STORAGE (IMAGENS)
+-- Nota: Em alguns provedores Postgres puros (Neon sem Supabase), o storage pode não existir.
+-- O comando abaixo tenta criar se a extensão existir.
+CREATE SCHEMA IF NOT EXISTS storage;
+CREATE TABLE IF NOT EXISTS storage.buckets (
+  id text NOT NULL PRIMARY KEY,
+  name text NOT NULL,
+  owner uuid,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now(),
+  public boolean DEFAULT FALSE
+);
+CREATE TABLE IF NOT EXISTS storage.objects (
+  id uuid NOT NULL DEFAULT uuid_generate_v4() PRIMARY KEY,
+  bucket_id text,
+  name text,
+  owner uuid,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now(),
+  last_accessed_at timestamptz DEFAULT now(),
+  metadata jsonb,
+  path_tokens text[] GENERATED ALWAYS AS (string_to_array(name, '/')) STORED
+);
 INSERT INTO storage.buckets (id, name, public) VALUES ('store-assets', 'store-assets', true) ON CONFLICT (id) DO NOTHING;
-DROP POLICY IF EXISTS "Public Access Bucket" ON storage.objects;
-CREATE POLICY "Public Access Bucket" ON storage.objects FOR SELECT USING ( bucket_id = 'store-assets' );
-CREATE POLICY "Authenticated Upload" ON storage.objects FOR INSERT WITH CHECK ( bucket_id = 'store-assets' );
 
--- 5. SEGURANÇA (RLS PÚBLICO)
+
+-- 5. SEGURANÇA (RLS PÚBLICO - MODO MULTI-TENANT SIMPLIFICADO)
+-- Habilita RLS mas cria politica publica para facilitar o setup inicial
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Public Access Profiles" ON profiles;
 CREATE POLICY "Public Access Profiles" ON profiles FOR ALL USING (true) WITH CHECK (true);
@@ -202,45 +223,30 @@ DROP POLICY IF EXISTS "Public Access Transactions" ON transactions;
 CREATE POLICY "Public Access Transactions" ON transactions FOR ALL USING (true) WITH CHECK (true);
 
 -- 6. DADOS INICIAIS
-INSERT INTO profiles (id, username, password, role) VALUES ('00000000-0000-0000-0000-000000000000', 'admin_demo', '123456', 'admin') ON CONFLICT (id) DO NOTHING;
-INSERT INTO store_settings (id, store_name, theme_color) VALUES (1, 'Minha Loja', '#0ea5e9') ON CONFLICT (id) DO NOTHING;
+-- Usuário Admin Padrão
+INSERT INTO profiles (id, username, password, role) 
+VALUES ('00000000-0000-0000-0000-000000000000', 'admin', '123456', 'admin') 
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO store_settings (id, store_name, theme_color) 
+VALUES (1, 'Minha Loja', '#0ea5e9') 
+ON CONFLICT (id) DO NOTHING;
+
 INSERT INTO payment_methods (name, type, rates) VALUES 
-('Dinheiro', 'cash', '{}'), ('Pix', 'pix', '{}'), ('Débito', 'debit', '{"1": 1.5}'), ('Crédito', 'credit', '{"1": 3.0}') ON CONFLICT DO NOTHING;
-INSERT INTO bank_accounts (name, balance, is_default, color) VALUES ('Caixa Loja', 0, true, '#10b981') ON CONFLICT DO NOTHING;
-`;
+('Dinheiro', 'cash', '{}'), ('Pix', 'pix', '{}'), ('Débito', 'debit', '{"1": 1.5}'), ('Crédito', 'credit', '{"1": 3.0}') 
+ON CONFLICT DO NOTHING;
 
-const correctionScript = `
--- CORREÇÃO PARA BAIXAS E CÓDIGO B
-CREATE SEQUENCE IF NOT EXISTS public.losses_seq START 1;
-
-CREATE OR REPLACE FUNCTION get_next_code(prefix TEXT) RETURNS TEXT AS $$
-DECLARE
-    next_val INTEGER;
-BEGIN
-    IF prefix = 'V' THEN
-        next_val := nextval('sales_seq');
-    ELSIF prefix = 'C' THEN
-        next_val := nextval('quotes_seq');
-    ELSE
-        next_val := nextval('losses_seq');
-    END IF;
-    RETURN prefix || LPAD(next_val::TEXT, 5, '0');
-END;
-$$ LANGUAGE plpgsql;
+INSERT INTO bank_accounts (name, balance, is_default, color) 
+VALUES ('Caixa Loja', 0, true, '#10b981') 
+ON CONFLICT DO NOTHING;
 `;
 
 export const migrations: Migration[] = [
     {
-        id: 'install_full',
-        date: '2025-02-25 09:00',
-        description: 'Instalação Completa (Reset Total)',
+        id: 'install_neon_v1',
+        date: '2025-02-25 15:00',
+        description: 'Instalação Completa (Neon/Postgres)',
         sql: fullInstallScript
-    },
-    {
-        id: 'loss_correction',
-        date: '2025-02-25 14:00',
-        description: 'Correção Baixas e Sequencia B',
-        sql: correctionScript
     }
 ];
 
