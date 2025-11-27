@@ -21,7 +21,9 @@ import {
   Key,
   Eye,
   EyeOff,
-  Eraser
+  Eraser,
+  Upload,
+  Image as ImageIcon
 } from 'lucide-react';
 
 export const Settings: React.FC = () => {
@@ -78,6 +80,32 @@ export const Settings: React.FC = () => {
         window.location.reload();
     }
     setLoading(false);
+  };
+
+  const handleUploadLogo = async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      setLoading(true);
+      try {
+          const fileExt = file.name.split('.').pop();
+          const fileName = `logo_${Date.now()}.${fileExt}`;
+          const filePath = `${fileName}`;
+
+          const { error: uploadError } = await supabase.storage
+              .from('store-assets')
+              .upload(filePath, file);
+
+          if (uploadError) throw uploadError;
+
+          const { data } = supabase.storage.from('store-assets').getPublicUrl(filePath);
+          
+          setStoreSettings(prev => ({ ...prev, logo_url: data.publicUrl }));
+          alert("Logo enviado com sucesso! Clique em 'Salvar Alterações' para confirmar.");
+      } catch (error: any) {
+          alert('Erro ao enviar imagem. Verifique se rodou o script SQL de permissões. Detalhes: ' + error.message);
+      }
+      setLoading(false);
   };
 
   // --- USER ACTIONS ---
@@ -139,7 +167,6 @@ export const Settings: React.FC = () => {
 
   const handleSyncFinancial = async () => {
     setSyncLoading(true);
-    // Lógica para sincronizar vendas passadas que não tem transação
     const { data: sales } = await supabase.from('vendas').select('*').in('status_label', ['Venda', 'Baixa']);
     
     if (sales) {
@@ -149,7 +176,6 @@ export const Settings: React.FC = () => {
         if (accId) {
             let count = 0;
             for (const sale of sales) {
-                // Verifica se já existe transação
                 const { data: existing } = await supabase.from('transactions').select('id').ilike('description', `%${sale.code}%`).single();
                 if (!existing) {
                     const isLoss = sale.status_label === 'Baixa';
@@ -159,7 +185,7 @@ export const Settings: React.FC = () => {
                         type: isLoss ? 'expense' : 'income',
                         account_id: accId,
                         category: isLoss ? 'Perdas' : 'Vendas',
-                        date: sale.created_at.split('T')[0] // Use original date
+                        date: sale.created_at.split('T')[0] 
                     });
                     count++;
                 }
@@ -224,7 +250,7 @@ export const Settings: React.FC = () => {
       {activeTab === 'general' && (
           <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-6 max-w-2xl">
               <h3 className="font-bold text-lg mb-4 dark:text-white flex items-center"><Building2 className="mr-2" size={20}/> Dados da Loja</h3>
-              <div className="space-y-4">
+              <div className="space-y-6">
                   <div>
                       <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Nome da Loja</label>
                       <input 
@@ -234,7 +260,7 @@ export const Settings: React.FC = () => {
                       />
                   </div>
                   <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Cor do Tema (Hex)</label>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Cor do Tema</label>
                       <div className="flex items-center gap-2">
                           <input 
                               type="color"
@@ -249,20 +275,46 @@ export const Settings: React.FC = () => {
                           />
                       </div>
                   </div>
+                  
                   <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">URL do Logo</label>
-                      <input 
-                          value={storeSettings.logo_url || ''}
-                          onChange={e => setStoreSettings({...storeSettings, logo_url: e.target.value})}
-                          className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white"
-                          placeholder="https://..."
-                      />
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Logotipo da Loja</label>
+                      <div className="flex items-center gap-4 p-4 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
+                          {storeSettings.logo_url ? (
+                              <div className="relative group">
+                                  <img src={storeSettings.logo_url} alt="Logo" className="h-16 w-16 object-contain rounded bg-white p-1 border shadow-sm" />
+                                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded cursor-pointer" onClick={() => document.getElementById('logo-upload')?.click()}>
+                                      <Edit2 className="text-white" size={16} />
+                                  </div>
+                              </div>
+                          ) : (
+                              <div className="h-16 w-16 rounded bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-400">
+                                  <ImageIcon size={24} />
+                              </div>
+                          )}
+                          
+                          <div className="flex-1">
+                              <label htmlFor="logo-upload" className="cursor-pointer inline-flex items-center px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-md font-medium text-sm hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors">
+                                  <Upload className="mr-2" size={16} />
+                                  {loading ? 'Enviando...' : 'Carregar Imagem (JPG/PNG)'}
+                              </label>
+                              <input 
+                                  id="logo-upload" 
+                                  type="file" 
+                                  accept="image/*" 
+                                  className="hidden" 
+                                  onChange={handleUploadLogo}
+                                  disabled={loading}
+                              />
+                              <p className="text-xs text-slate-500 mt-2">Recomendado: PNG transparente, 128x128px.</p>
+                          </div>
+                      </div>
                   </div>
-                  <div className="pt-4">
+
+                  <div className="pt-2 border-t dark:border-slate-700">
                       <button 
                           onClick={handleSaveSettings}
                           disabled={loading}
-                          className="px-6 py-2 bg-primary-600 text-white rounded font-bold hover:bg-primary-700 disabled:opacity-50 flex items-center"
+                          className="px-6 py-2 bg-primary-600 text-white rounded font-bold hover:bg-primary-700 disabled:opacity-50 flex items-center shadow-lg"
                       >
                           {loading ? <Loader className="animate-spin mr-2" size={18}/> : <Save className="mr-2" size={18}/>}
                           Salvar Alterações
@@ -321,7 +373,7 @@ export const Settings: React.FC = () => {
               <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-6">
                   <h3 className="text-lg font-bold dark:text-white flex items-center mb-4"><Server className="mr-2" size={20}/> Conexão do Banco de Dados</h3>
                   <p className="text-sm text-slate-500 mb-4">
-                      Configure aqui a conexão com seu projeto (Supabase/Neon). Se você utiliza Neon, certifique-se de usar um adaptador compatível ou credenciais de um projeto Supabase que aponte para seu Postgres.
+                      Configure aqui a conexão com seu projeto (Supabase/Neon).
                   </p>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -362,7 +414,6 @@ export const Settings: React.FC = () => {
                       <button 
                           onClick={handleClearConnectionFields}
                           className="px-4 py-2 bg-white border dark:bg-slate-800 dark:border-slate-600 text-slate-500 hover:bg-slate-100 rounded text-sm font-medium flex items-center transition-colors"
-                          title="Limpar campos de digitação"
                       >
                           <Eraser size={16} className="mr-2"/> Limpar Campos
                       </button>
@@ -391,8 +442,7 @@ export const Settings: React.FC = () => {
                       <div>
                           <h3 className="text-lg font-bold text-blue-800 dark:text-blue-300 flex items-center"><Shield className="mr-2" size={20}/> Backup & Segurança</h3>
                           <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">
-                              O banco de dados é hospedado na nuvem. 
-                              Para sua segurança adicional, você pode baixar uma cópia completa dos dados (JSON) a qualquer momento.
+                              Baixe uma cópia completa dos dados (JSON) ou sincronize vendas antigas com o financeiro.
                           </p>
                       </div>
                       <div className="flex flex-col gap-2">
@@ -402,7 +452,7 @@ export const Settings: React.FC = () => {
                             className="px-6 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow flex items-center whitespace-nowrap disabled:opacity-50 justify-center"
                         >
                             {backupLoading ? <Loader size={18} className="animate-spin mr-2"/> : <DownloadCloud size={18} className="mr-2"/>}
-                            Fazer Backup Completo (JSON)
+                            Backup JSON
                         </button>
                         <button 
                             onClick={handleSyncFinancial}

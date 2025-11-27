@@ -8,7 +8,7 @@ export interface Migration {
 
 const fullInstallScript = `
 -- =================================================================
--- INSTALAÇÃO COMPLETA (NEON / POSTGRES)
+-- INSTALAÇÃO COMPLETA (SUPABASE / POSTGRES)
 -- =================================================================
 
 -- 1. LIMPEZA (DROP)
@@ -155,9 +155,13 @@ CREATE TABLE public.transactions (
 );
 
 -- 4. STORAGE (IMAGENS)
--- Nota: O Schema 'storage' e a tabela 'buckets' são gerenciados internamente pelo Supabase.
--- Apenas inserimos o bucket se ele não existir.
+-- Insere o bucket store-assets se não existir.
+-- (Não usamos CREATE TABLE storage.buckets pois isso é protegido pelo Supabase)
 INSERT INTO storage.buckets (id, name, public) VALUES ('store-assets', 'store-assets', true) ON CONFLICT (id) DO NOTHING;
+
+-- Política de segurança para permitir upload público no bucket 'store-assets'
+DROP POLICY IF EXISTS "Public Access Bucket" ON storage.objects;
+CREATE POLICY "Public Access Bucket" ON storage.objects FOR ALL USING ( bucket_id = 'store-assets' ) WITH CHECK ( bucket_id = 'store-assets' );
 
 
 -- 5. SEGURANÇA (RLS PÚBLICO - MODO MULTI-TENANT SIMPLIFICADO)
@@ -222,9 +226,9 @@ ON CONFLICT DO NOTHING;
 
 export const migrations: Migration[] = [
     {
-        id: 'install_neon_v2',
-        date: '2025-02-25 16:00',
-        description: 'Instalação Completa (Neon/Postgres) - Fix Storage Permissions',
+        id: 'install_supabase_v3',
+        date: '2025-02-25 17:00',
+        description: 'Instalação Completa (Supabase / Postgres) - Fix Permissions',
         sql: fullInstallScript
     }
 ];
