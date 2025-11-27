@@ -1,44 +1,47 @@
-
 import { createClient } from '@supabase/supabase-js';
 
-// Utilitário para ler variáveis de ambiente de forma segura no Vite
-// Suporta tanto VITE_ quanto NEXT_PUBLIC_ para facilitar deploy na Vercel
+// Função para obter URL explicitamente
 const getUrl = () => {
-    // Verifica import.meta.env (Vite Standard)
+    // 1. Padrão VITE (Recomendado)
     // @ts-ignore
-    if (typeof import.meta !== 'undefined' && import.meta.env) {
-        // @ts-ignore
-        if (import.meta.env.VITE_SUPABASE_URL) return import.meta.env.VITE_SUPABASE_URL;
-        // @ts-ignore
-        if (import.meta.env.NEXT_PUBLIC_SUPABASE_URL) return import.meta.env.NEXT_PUBLIC_SUPABASE_URL;
-    }
-    // Verifica process.env (Fallback / Compatibilidade)
+    if (import.meta.env && import.meta.env.VITE_SUPABASE_URL) return import.meta.env.VITE_SUPABASE_URL;
+    
+    // 2. Tentativa de ler NEXT_PUBLIC no import.meta (caso envPrefix esteja alterado)
     // @ts-ignore
-    if (typeof process !== 'undefined' && process.env) {
+    if (import.meta.env && import.meta.env.NEXT_PUBLIC_SUPABASE_URL) return import.meta.env.NEXT_PUBLIC_SUPABASE_URL;
+
+    // 3. Fallback para process.env (Vercel injeta isso as vezes no build)
+    try {
         // @ts-ignore
-        if (process.env.VITE_SUPABASE_URL) return process.env.VITE_SUPABASE_URL;
-        // @ts-ignore
-        if (process.env.NEXT_PUBLIC_SUPABASE_URL) return process.env.NEXT_PUBLIC_SUPABASE_URL;
-    }
+        if (typeof process !== 'undefined' && process.env) {
+            // @ts-ignore
+            if (process.env.VITE_SUPABASE_URL) return process.env.VITE_SUPABASE_URL;
+            // @ts-ignore
+            if (process.env.NEXT_PUBLIC_SUPABASE_URL) return process.env.NEXT_PUBLIC_SUPABASE_URL;
+        }
+    } catch(e) {}
+
     return '';
 };
 
 // Função para obter Key explicitamente
 const getKey = () => {
     // @ts-ignore
-    if (typeof import.meta !== 'undefined' && import.meta.env) {
-        // @ts-ignore
-        if (import.meta.env.VITE_SUPABASE_ANON_KEY) return import.meta.env.VITE_SUPABASE_ANON_KEY;
-        // @ts-ignore
-        if (import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) return import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    }
+    if (import.meta.env && import.meta.env.VITE_SUPABASE_ANON_KEY) return import.meta.env.VITE_SUPABASE_ANON_KEY;
+    
     // @ts-ignore
-    if (typeof process !== 'undefined' && process.env) {
+    if (import.meta.env && import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) return import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    try {
         // @ts-ignore
-        if (process.env.VITE_SUPABASE_ANON_KEY) return process.env.VITE_SUPABASE_ANON_KEY;
-        // @ts-ignore
-        if (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    }
+        if (typeof process !== 'undefined' && process.env) {
+            // @ts-ignore
+            if (process.env.VITE_SUPABASE_ANON_KEY) return process.env.VITE_SUPABASE_ANON_KEY;
+            // @ts-ignore
+            if (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+        }
+    } catch(e) {}
+
     return '';
 };
 

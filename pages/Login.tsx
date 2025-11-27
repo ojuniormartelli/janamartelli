@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { Lock, User, Eye, EyeOff, AlertTriangle, Database, X, Check, Copy, Wifi, WifiOff } from 'lucide-react';
+import { Lock, User, Eye, EyeOff, AlertTriangle, Database, X, Check, Copy, Wifi, WifiOff, Info } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { dbSetupScript } from '../utils/database.sql';
 import { isDbConfigured, supabase } from '../supabaseClient';
@@ -19,6 +18,7 @@ export const Login: React.FC = () => {
 
   // Connection Check
   const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'error'>('checking');
+  const [envDebugInfo, setEnvDebugInfo] = useState<string>('');
 
   // Install Modal State
   const [showInstallModal, setShowInstallModal] = useState(false);
@@ -33,6 +33,7 @@ export const Login: React.FC = () => {
   const checkConnection = async () => {
       if (!isDbConfigured) {
           setConnectionStatus('error');
+          setEnvDebugInfo('Variáveis de ambiente não encontradas. Verifique se VITE_SUPABASE_URL ou NEXT_PUBLIC_SUPABASE_URL estão configuradas na Vercel.');
           return;
       }
       try {
@@ -43,11 +44,13 @@ export const Login: React.FC = () => {
              setConnectionStatus('connected');
           } else if (error.message && (error.message.includes('fetch') || error.code === '500')) {
              setConnectionStatus('error');
+             setEnvDebugInfo(`Erro de rede: ${error.message}. Verifique a URL do Projeto.`);
           } else {
              setConnectionStatus('connected');
           }
-      } catch (e) {
+      } catch (e: any) {
           setConnectionStatus('error');
+          setEnvDebugInfo(`Exceção: ${e.message}`);
       }
   };
 
@@ -103,6 +106,15 @@ export const Login: React.FC = () => {
           </div>
         )}
 
+        {connectionStatus === 'error' && (
+             <div className="mb-6 p-3 bg-orange-50 border border-orange-200 text-orange-800 rounded-lg text-xs">
+                 <div className="flex items-center font-bold mb-1">
+                     <Info size={14} className="mr-1"/> Diagnóstico de Conexão:
+                 </div>
+                 {envDebugInfo || 'Banco de dados não configurado.'}
+             </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
@@ -147,8 +159,8 @@ export const Login: React.FC = () => {
 
           <button
             type="submit"
-            disabled={loading}
-            className="w-full bg-primary-600 hover:bg-primary-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors disabled:opacity-50 flex justify-center items-center shadow-lg shadow-primary-900/20"
+            disabled={loading || connectionStatus === 'error'}
+            className="w-full bg-primary-600 hover:bg-primary-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors disabled:opacity-50 flex justify-center items-center shadow-lg shadow-primary-900/20 disabled:cursor-not-allowed"
           >
             {loading ? (
               <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />

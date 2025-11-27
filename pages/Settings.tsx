@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { supabase, resetDatabaseConfig, isUsingEnv } from '../supabaseClient';
 import { migrations } from '../utils/database.sql';

@@ -1,4 +1,3 @@
-
 export interface Migration {
     id: string;
     date: string;
