@@ -34,7 +34,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE public.profiles (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
   username TEXT UNIQUE NOT NULL,
-  password TEXT DEFAULT '123456', -- Senha Padrão
+  password TEXT DEFAULT 'Gs020185*', -- Senha inicial Segura
   role TEXT CHECK (role IN ('admin', 'employee')) DEFAULT 'admin',
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -155,11 +155,8 @@ CREATE TABLE public.transactions (
 );
 
 -- 4. STORAGE (IMAGENS)
--- Insere o bucket store-assets se não existir.
--- (Não usamos CREATE TABLE storage.buckets pois isso é protegido pelo Supabase)
 INSERT INTO storage.buckets (id, name, public) VALUES ('store-assets', 'store-assets', true) ON CONFLICT (id) DO NOTHING;
 
--- Política de segurança para permitir upload público no bucket 'store-assets'
 DROP POLICY IF EXISTS "Public Access Bucket" ON storage.objects;
 CREATE POLICY "Public Access Bucket" ON storage.objects FOR ALL USING ( bucket_id = 'store-assets' ) WITH CHECK ( bucket_id = 'store-assets' );
 
@@ -207,9 +204,13 @@ CREATE POLICY "Public Access Transactions" ON transactions FOR ALL USING (true) 
 
 -- 6. DADOS INICIAIS
 -- Usuário Admin Padrão
+-- A senha inicial é Gs020185* para o primeiro acesso, depois o sistema força a troca.
 INSERT INTO profiles (id, username, password, role) 
-VALUES ('00000000-0000-0000-0000-000000000000', 'admin', '123456', 'admin') 
+VALUES ('00000000-0000-0000-0000-000000000000', 'admin', 'Gs020185*', 'admin') 
 ON CONFLICT (id) DO NOTHING;
+
+-- Tenta alterar senha do admin se ele já existir (para garantir reset em instalações sujas)
+UPDATE profiles SET password = 'Gs020185*' WHERE username = 'admin' AND id = '00000000-0000-0000-0000-000000000000';
 
 INSERT INTO store_settings (id, store_name, theme_color) 
 VALUES (1, 'Minha Loja', '#0ea5e9') 
@@ -226,9 +227,9 @@ ON CONFLICT DO NOTHING;
 
 export const migrations: Migration[] = [
     {
-        id: 'install_supabase_v3',
-        date: '2025-02-25 17:00',
-        description: 'Instalação Completa (Supabase / Postgres) - Fix Permissions',
+        id: 'install_supabase_v5_secure',
+        date: '2025-02-25 18:30',
+        description: 'Instalação Completa (Supabase) - Admin Seguro',
         sql: fullInstallScript
     }
 ];

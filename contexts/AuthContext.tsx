@@ -1,7 +1,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Profile } from '../types';
-import { supabase } from '../supabaseClient';
+import { supabase, isDbConfigured } from '../supabaseClient';
 
 interface AuthContextType {
   user: Profile | null;
@@ -9,6 +9,7 @@ interface AuthContextType {
   loading: boolean;
   signIn: (username: string, password: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -32,6 +33,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const signIn = async (username: string, password: string) => {
+    // 1. MODO BOOTSTRAP (Sem Banco de Dados Configurado)
+    if (!isDbConfigured) {
+        if (username === 'admin' && password === '123456') {
+            const bootstrapUser: Profile = {
+                id: 'bootstrap',
+                username: 'admin',
+                role: 'admin',
+                isBootstrap: true
+            };
+            setUser(bootstrapUser);
+            localStorage.setItem('pijama_user', JSON.stringify(bootstrapUser));
+            return { error: null };
+        } else {
+            return { error: 'Credenciais inválidas para configuração inicial.' };
+        }
+    }
+
+    // 2. MODO PRODUÇÃO (Banco Configurado)
+    // Segurança: Bloquear explicitamente a senha de instalação se tentada em produção
+    if (password === '123456') {
+        return { error: 'Acesso negado: Credencial de instalação não permitida em produção.' };
+    }
+
     try {
         // Real database check
         const { data, error } = await supabase
@@ -60,12 +84,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signOut = async () => {
     setUser(null);
     localStorage.removeItem('pijama_user');
-    // Optional: reload to clear states
     window.location.reload();
   };
 
+  const refreshUser = async () => {
+      if (user && !user.isBootstrap) {
+          const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+          if (data) {
+              setUser(data);
+              localStorage.setItem('pijama_user', JSON.stringify(data));
+          }
+      }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, profile: user, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, profile: user, loading, signIn, signOut, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

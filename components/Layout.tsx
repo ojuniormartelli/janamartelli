@@ -15,7 +15,8 @@ import {
   Sun,
   Menu,
   X,
-  Wallet
+  Wallet,
+  ShieldAlert
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -23,7 +24,7 @@ interface LayoutProps {
 }
 
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
-  const { signOut, profile } = useAuth();
+  const { signOut, profile, user, refreshUser } = useAuth();
   const location = useLocation();
   const [darkMode, setDarkMode] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -33,13 +34,51 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       logo_url: ''
   });
 
+  // Security Force Update State
+  const [showSecurityModal, setShowSecurityModal] = useState(false);
+  const [newAdminUser, setNewAdminUser] = useState('');
+  const [newAdminPass, setNewAdminPass] = useState('');
+
   useEffect(() => {
     if (localStorage.getItem('theme') === 'dark') {
       setDarkMode(true);
       document.documentElement.classList.add('dark');
     }
-    fetchStoreSettings();
-  }, []);
+    
+    if (!user?.isBootstrap) {
+        fetchStoreSettings();
+        checkSecurityStatus();
+    }
+  }, [user]);
+
+  const checkSecurityStatus = async () => {
+      // Se não é bootstrap (tem banco) e o usuário logado ainda é o 'admin'
+      if (user && user.username === 'admin') {
+          // Check if password is still the default from SQL (Gs020185*)
+          const { data } = await supabase.from('profiles').select('password').eq('username', 'admin').single();
+          if (data && data.password === 'Gs020185*') {
+              setShowSecurityModal(true);
+          }
+      }
+  };
+
+  const handleUpdateAdmin = async () => {
+      if (!newAdminUser || !newAdminPass) return alert("Preencha todos os campos");
+      if (newAdminPass.length < 6) return alert("Senha muito curta");
+
+      // 1. Create new admin user or update existing
+      const { error } = await supabase.from('profiles').update({
+          username: newAdminUser,
+          password: newAdminPass
+      }).eq('username', 'admin');
+
+      if (error) {
+          alert("Erro ao atualizar: " + error.message);
+      } else {
+          alert("Usuário atualizado com sucesso! Por favor, faça login com as novas credenciais.");
+          await signOut();
+      }
+  };
 
   const fetchStoreSettings = async () => {
       const { data } = await supabase.from('store_settings').select('*').single();
@@ -74,16 +113,70 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const menuItems = [
     { path: '/', icon: ShoppingCart, label: 'PDV / Caixa' },
-    { path: '/financial', icon: Wallet, label: 'Financeiro' }, // Changed to Financial
-    { path: '/dashboard', icon: LayoutDashboard, label: 'Visão Geral' }, // Renamed
+    { path: '/financial', icon: Wallet, label: 'Financeiro' },
+    { path: '/dashboard', icon: LayoutDashboard, label: 'Visão Geral' },
     { path: '/inventory', icon: Shirt, label: 'Estoque' },
     { path: '/sales', icon: History, label: 'Vendas' },
     { path: '/clients', icon: Users, label: 'Clientes' },
     { path: '/settings', icon: Settings, label: 'Configurações' },
   ];
 
+  // Se for Bootstrap, esconde o menu lateral completo
+  if (user?.isBootstrap) {
+      return (
+          <div className="flex h-screen bg-slate-50 dark:bg-slate-900 justify-center">
+              <main className="flex-1 max-w-5xl p-8 overflow-auto">
+                  {children}
+              </main>
+          </div>
+      );
+  }
+
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-200">
+      
+      {/* SECURITY MODAL */}
+      {showSecurityModal && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm">
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md p-8 border-2 border-red-500">
+                  <div className="text-center mb-6">
+                      <ShieldAlert size={48} className="mx-auto text-red-500 mb-2"/>
+                      <h2 className="text-2xl font-bold text-slate-800 dark:text-white">Ação Necessária</h2>
+                      <p className="text-slate-600 dark:text-slate-300 mt-2">
+                          Por segurança, você deve alterar o usuário e senha padrão agora.
+                          O usuário 'admin' será renomeado.
+                      </p>
+                  </div>
+                  
+                  <div className="space-y-4">
+                      <div>
+                          <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Novo Nome de Usuário</label>
+                          <input 
+                              className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                              placeholder="Ex: seu.nome"
+                              value={newAdminUser} onChange={e => setNewAdminUser(e.target.value)}
+                          />
+                      </div>
+                      <div>
+                          <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Nova Senha</label>
+                          <input 
+                              type="text"
+                              className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                              placeholder="Mínimo 6 caracteres"
+                              value={newAdminPass} onChange={e => setNewAdminPass(e.target.value)}
+                          />
+                      </div>
+                      <button 
+                          onClick={handleUpdateAdmin}
+                          className="w-full py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 shadow-lg mt-4"
+                      >
+                          Atualizar e Re-logar
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {mobileMenuOpen && (
         <div className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={() => setMobileMenuOpen(false)} />
       )}

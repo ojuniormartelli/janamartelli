@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
-import { supabase, resetDatabaseConfig } from '../supabaseClient';
+import { supabase, resetDatabaseConfig, isUsingEnv } from '../supabaseClient';
 import { migrations } from '../utils/database.sql';
 import { Profile } from '../types';
+import { useAuth } from '../contexts/AuthContext';
 import { 
   Server, 
   RefreshCw, 
@@ -18,16 +19,19 @@ import {
   Trash2,
   Edit2,
   X,
-  Key,
   Eye,
   EyeOff,
   Eraser,
   Upload,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Globe,
+  AlertOctagon
 } from 'lucide-react';
 
 export const Settings: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'database'>('general');
+  const { user } = useAuth();
+  // Se for bootstrap, força aba database
+  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'database'>(user?.isBootstrap ? 'database' : 'general');
   const [loading, setLoading] = useState(false);
   
   // Store Settings State
@@ -50,16 +54,30 @@ export const Settings: React.FC = () => {
   const [copied, setCopied] = useState<string | null>(null);
   
   // Connection State
-  const [dbUrl, setDbUrl] = useState(localStorage.getItem('custom_supabase_url') || '');
-  const [dbKey, setDbKey] = useState(localStorage.getItem('custom_supabase_key') || '');
+  const [dbUrl, setDbUrl] = useState('');
+  const [dbKey, setDbKey] = useState('');
   const [showDbKey, setShowDbKey] = useState(false);
 
   useEffect(() => {
-    fetchSettings();
-    if (activeTab === 'users') fetchUsers();
+    if (!user?.isBootstrap) {
+        fetchSettings();
+        if (activeTab === 'users') fetchUsers();
+    }
+    if (activeTab === 'database') loadConnectionInfo();
   }, [activeTab]);
 
+  const loadConnectionInfo = () => {
+      const localUrl = localStorage.getItem('custom_supabase_url');
+      const localKey = localStorage.getItem('custom_supabase_key');
+      
+      if (!isUsingEnv && localUrl && localKey) {
+          setDbUrl(localUrl);
+          setDbKey(localKey);
+      }
+  };
+
   const fetchSettings = async () => {
+    if(user?.isBootstrap) return;
     setLoading(true);
     const { data } = await supabase.from('store_settings').select('*').single();
     if (data) setStoreSettings(data);
@@ -67,11 +85,13 @@ export const Settings: React.FC = () => {
   };
 
   const fetchUsers = async () => {
+      if(user?.isBootstrap) return;
       const { data } = await supabase.from('profiles').select('*').order('username');
       if(data) setUsers(data as any);
   };
 
   const handleSaveSettings = async () => {
+    if(user?.isBootstrap) return;
     setLoading(true);
     const { error } = await supabase.from('store_settings').upsert(storeSettings);
     if (error) alert('Erro ao salvar configurações');
@@ -83,6 +103,7 @@ export const Settings: React.FC = () => {
   };
 
   const handleUploadLogo = async (event: React.ChangeEvent<HTMLInputElement>) => {
+      if(user?.isBootstrap) return;
       const file = event.target.files?.[0];
       if (!file) return;
 
@@ -210,7 +231,7 @@ export const Settings: React.FC = () => {
       
       localStorage.setItem('custom_supabase_url', dbUrl);
       localStorage.setItem('custom_supabase_key', dbKey);
-      alert("Conexão atualizada! O sistema será recarregado.");
+      alert("Conexão atualizada! O sistema será recarregado. Faça login com admin/Gs020185*.");
       window.location.reload();
   };
 
@@ -222,22 +243,28 @@ export const Settings: React.FC = () => {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-slate-800 dark:text-white">Configurações</h2>
+        <h2 className="text-2xl font-bold text-slate-800 dark:text-white">
+            {user?.isBootstrap ? 'Instalação / Configuração' : 'Configurações'}
+        </h2>
       </div>
 
       <div className="flex space-x-4 border-b border-slate-200 dark:border-slate-700">
-        <button 
-            onClick={() => setActiveTab('general')}
-            className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors ${activeTab === 'general' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-        >
-            Geral
-        </button>
-        <button 
-            onClick={() => setActiveTab('users')}
-            className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors ${activeTab === 'users' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-        >
-            Usuários
-        </button>
+        {!user?.isBootstrap && (
+            <>
+                <button 
+                    onClick={() => setActiveTab('general')}
+                    className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors ${activeTab === 'general' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                >
+                    Geral
+                </button>
+                <button 
+                    onClick={() => setActiveTab('users')}
+                    className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors ${activeTab === 'users' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                >
+                    Usuários
+                </button>
+            </>
+        )}
         <button 
             onClick={() => setActiveTab('database')}
             className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors ${activeTab === 'database' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
@@ -247,7 +274,7 @@ export const Settings: React.FC = () => {
       </div>
 
       {/* --- ABA GERAL --- */}
-      {activeTab === 'general' && (
+      {activeTab === 'general' && !user?.isBootstrap && (
           <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-6 max-w-2xl">
               <h3 className="font-bold text-lg mb-4 dark:text-white flex items-center"><Building2 className="mr-2" size={20}/> Dados da Loja</h3>
               <div className="space-y-6">
@@ -325,7 +352,7 @@ export const Settings: React.FC = () => {
       )}
 
       {/* --- ABA USUÁRIOS --- */}
-      {activeTab === 'users' && (
+      {activeTab === 'users' && !user?.isBootstrap && (
           <div className="bg-white dark:bg-slate-800 rounded-lg shadow overflow-hidden">
               <div className="p-4 border-b dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
                   <h3 className="font-bold dark:text-white flex items-center"><Users className="mr-2" size={20}/> Gerenciar Acesso</h3>
@@ -369,101 +396,90 @@ export const Settings: React.FC = () => {
       {activeTab === 'database' && (
           <div className="space-y-8">
               
+              {user?.isBootstrap && !isUsingEnv && (
+                  <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-lg flex items-start">
+                      <AlertOctagon className="mr-3 mt-1 flex-shrink-0" />
+                      <div>
+                          <h4 className="font-bold">Passo 1: Conectar Banco de Dados</h4>
+                          <p className="text-sm">Insira abaixo as credenciais (URL e Key) do seu projeto Supabase/Neon. <br/>Após salvar, copie o código SQL e execute-o na plataforma do banco.</p>
+                      </div>
+                  </div>
+              )}
+
               {/* Database Connection Config */}
               <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-6">
                   <h3 className="text-lg font-bold dark:text-white flex items-center mb-4"><Server className="mr-2" size={20}/> Conexão do Banco de Dados</h3>
-                  <p className="text-sm text-slate-500 mb-4">
-                      Configure aqui a conexão com seu projeto (Supabase/Neon).
-                  </p>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Project URL</label>
-                          <div className="flex gap-2">
-                            <input 
-                                type="text"
-                                value={dbUrl}
-                                onChange={(e) => setDbUrl(e.target.value)}
-                                className="w-full p-2 bg-white dark:bg-slate-800 border rounded text-slate-600 dark:text-slate-300 text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                                placeholder="https://seu-projeto.supabase.co"
-                            />
+                  {isUsingEnv ? (
+                      <div className="mb-4 p-4 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 rounded border border-blue-200 dark:border-blue-800">
+                          <div className="flex items-center mb-1 font-bold">
+                              <Globe size={18} className="mr-2"/>
+                              Conexão Gerenciada (Link Exclusivo)
                           </div>
+                          <p className="text-sm">Este aplicativo está vinculado automaticamente ao banco de dados do cliente via servidor. Nenhuma configuração manual é necessária.</p>
                       </div>
-                      <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">API Key (Anon)</label>
-                          <div className="relative">
-                            <input 
-                                type={showDbKey ? "text" : "password"}
-                                value={dbKey}
-                                onChange={(e) => setDbKey(e.target.value)}
-                                className="w-full p-2 bg-white dark:bg-slate-800 border rounded text-slate-600 dark:text-slate-300 text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:outline-none pr-10"
-                                placeholder="eyJ..."
-                            />
+                  ) : (
+                      <>
+                        <p className="text-sm text-slate-500 mb-4">
+                            Configuração Manual Local (Salva neste navegador).
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="relative">
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Project URL</label>
+                                <input 
+                                    type="text"
+                                    value={dbUrl}
+                                    onChange={(e) => setDbUrl(e.target.value)}
+                                    className="w-full p-2 bg-white dark:bg-slate-800 border rounded text-slate-600 dark:text-slate-300 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    placeholder="https://seu-projeto.supabase.co"
+                                />
+                            </div>
+                            <div className="relative">
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">API Key (Anon)</label>
+                                <div className="relative">
+                                    <input 
+                                        type={showDbKey ? "text" : "password"}
+                                        value={dbKey}
+                                        onChange={(e) => setDbKey(e.target.value)}
+                                        className="w-full p-2 bg-white dark:bg-slate-800 border rounded text-slate-600 dark:text-slate-300 text-sm font-mono focus:outline-none pr-10 focus:ring-2 focus:ring-blue-500"
+                                        placeholder="eyJ..."
+                                    />
+                                    <button 
+                                        type="button"
+                                        onClick={() => setShowDbKey(!showDbKey)}
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                    >
+                                        {showDbKey ? <EyeOff size={16}/> : <Eye size={16}/>}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="mt-4 flex justify-end gap-3">
                             <button 
-                                type="button"
-                                onClick={() => setShowDbKey(!showDbKey)}
-                                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                onClick={handleClearConnectionFields}
+                                className="px-4 py-2 bg-white border dark:bg-slate-800 dark:border-slate-600 text-slate-500 hover:bg-slate-100 rounded text-sm font-medium flex items-center transition-colors"
                             >
-                                {showDbKey ? <EyeOff size={16}/> : <Eye size={16}/>}
+                                <Eraser size={16} className="mr-2"/> Limpar Campos
                             </button>
-                          </div>
-                      </div>
-                  </div>
-                  
-                  <div className="mt-4 flex justify-end gap-3">
-                      <button 
-                          onClick={handleClearConnectionFields}
-                          className="px-4 py-2 bg-white border dark:bg-slate-800 dark:border-slate-600 text-slate-500 hover:bg-slate-100 rounded text-sm font-medium flex items-center transition-colors"
-                      >
-                          <Eraser size={16} className="mr-2"/> Limpar Campos
-                      </button>
-                      <button 
-                          onClick={() => {
-                              if(confirm('Isso desconectará o banco atual e limpará as chaves do navegador. Continuar?')) {
-                                  resetDatabaseConfig();
-                              }
-                          }}
-                          className="px-4 py-2 bg-red-50 text-red-600 hover:bg-red-100 rounded text-sm font-bold flex items-center transition-colors"
-                      >
-                          <X size={16} className="mr-2"/> Desconectar
-                      </button>
-                      <button 
-                          onClick={handleSaveConnection}
-                          className="px-4 py-2 bg-green-600 text-white hover:bg-green-700 rounded text-sm font-bold flex items-center transition-colors shadow-lg"
-                      >
-                          <Save size={16} className="mr-2"/> Salvar Conexão
-                      </button>
-                  </div>
-              </div>
-
-              {/* Backup Section */}
-              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6">
-                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                      <div>
-                          <h3 className="text-lg font-bold text-blue-800 dark:text-blue-300 flex items-center"><Shield className="mr-2" size={20}/> Backup & Segurança</h3>
-                          <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">
-                              Baixe uma cópia completa dos dados (JSON) ou sincronize vendas antigas com o financeiro.
-                          </p>
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <button 
-                            onClick={handleFullBackup}
-                            disabled={backupLoading}
-                            className="px-6 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow flex items-center whitespace-nowrap disabled:opacity-50 justify-center"
-                        >
-                            {backupLoading ? <Loader size={18} className="animate-spin mr-2"/> : <DownloadCloud size={18} className="mr-2"/>}
-                            Backup JSON
-                        </button>
-                        <button 
-                            onClick={handleSyncFinancial}
-                            disabled={syncLoading}
-                            className="px-6 py-2 bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200 rounded-lg font-bold hover:bg-slate-300 shadow flex items-center whitespace-nowrap disabled:opacity-50 justify-center text-sm"
-                        >
-                            {syncLoading ? <Loader size={16} className="animate-spin mr-2"/> : <RefreshCw size={16} className="mr-2"/>}
-                            Sincronizar Financeiro
-                        </button>
-                      </div>
-                  </div>
+                            <button 
+                                onClick={() => {
+                                    if(confirm('Isso limpará as chaves manuais deste navegador. Continuar?')) {
+                                        resetDatabaseConfig();
+                                    }
+                                }}
+                                className="px-4 py-2 bg-red-50 text-red-600 hover:bg-red-100 rounded text-sm font-bold flex items-center transition-colors"
+                            >
+                                <X size={16} className="mr-2"/> Resetar
+                            </button>
+                            <button 
+                                onClick={handleSaveConnection}
+                                className="px-4 py-2 bg-green-600 text-white hover:bg-green-700 rounded text-sm font-bold flex items-center transition-colors shadow-lg"
+                            >
+                                <Save size={16} className="mr-2"/> Salvar / Sobrescrever
+                            </button>
+                        </div>
+                      </>
+                  )}
               </div>
 
               {/* Migrations Section */}
@@ -495,6 +511,38 @@ export const Settings: React.FC = () => {
                       </div>
                   ))}
               </div>
+
+              {/* Backup Section (Only in Production) */}
+              {!user?.isBootstrap && (
+                  <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6">
+                      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                          <div>
+                              <h3 className="text-lg font-bold text-blue-800 dark:text-blue-300 flex items-center"><Shield className="mr-2" size={20}/> Backup & Segurança</h3>
+                              <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">
+                                  Baixe uma cópia completa dos dados (JSON) ou sincronize vendas antigas com o financeiro.
+                              </p>
+                          </div>
+                          <div className="flex flex-col gap-2">
+                            <button 
+                                onClick={handleFullBackup}
+                                disabled={backupLoading}
+                                className="px-6 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow flex items-center whitespace-nowrap disabled:opacity-50 justify-center"
+                            >
+                                {backupLoading ? <Loader size={18} className="animate-spin mr-2"/> : <DownloadCloud size={18} className="mr-2"/>}
+                                Backup JSON
+                            </button>
+                            <button 
+                                onClick={handleSyncFinancial}
+                                disabled={syncLoading}
+                                className="px-6 py-2 bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200 rounded-lg font-bold hover:bg-slate-300 shadow flex items-center whitespace-nowrap disabled:opacity-50 justify-center text-sm"
+                            >
+                                {syncLoading ? <Loader size={16} className="animate-spin mr-2"/> : <RefreshCw size={16} className="mr-2"/>}
+                                Sincronizar Financeiro
+                            </button>
+                          </div>
+                      </div>
+                  </div>
+              )}
           </div>
       )}
 

@@ -26,6 +26,11 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   if (!user) {
       return <Navigate to="/login" replace />;
   }
+
+  // Se estiver em modo Bootstrap (Instalação), força a ida para Settings
+  if (user.isBootstrap && window.location.hash !== '#/settings') {
+      return <Navigate to="/settings" replace />;
+  }
   
   return <Layout>{children}</Layout>;
 };
