@@ -18,7 +18,9 @@ import {
   Trash2,
   Edit2,
   X,
-  Key
+  Key,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 
 export const Settings: React.FC = () => {
@@ -43,6 +45,11 @@ export const Settings: React.FC = () => {
   const [backupLoading, setBackupLoading] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  
+  // Connection State
+  const [dbUrl, setDbUrl] = useState(localStorage.getItem('custom_supabase_url') || '');
+  const [dbKey, setDbKey] = useState(localStorage.getItem('custom_supabase_key') || '');
+  const [showDbKey, setShowDbKey] = useState(false);
 
   useEffect(() => {
     fetchSettings();
@@ -169,6 +176,15 @@ export const Settings: React.FC = () => {
       navigator.clipboard.writeText(sql);
       setCopied(id);
       setTimeout(() => setCopied(null), 2000);
+  };
+
+  const handleSaveConnection = () => {
+      if (!dbUrl || !dbKey) return alert("URL e Key são obrigatórios.");
+      
+      localStorage.setItem('custom_supabase_url', dbUrl);
+      localStorage.setItem('custom_supabase_key', dbKey);
+      alert("Conexão atualizada! O sistema será recarregado.");
+      window.location.reload();
   };
 
   return (
@@ -306,33 +322,50 @@ export const Settings: React.FC = () => {
                       <div>
                           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Project URL</label>
                           <input 
-                              type="password"
-                              readOnly
-                              value={localStorage.getItem('custom_supabase_url') || ''}
-                              className="w-full p-2 bg-white dark:bg-slate-800 border rounded text-slate-600 dark:text-slate-300 text-sm font-mono"
+                              type="text"
+                              value={dbUrl}
+                              onChange={(e) => setDbUrl(e.target.value)}
+                              className="w-full p-2 bg-white dark:bg-slate-800 border rounded text-slate-600 dark:text-slate-300 text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                              placeholder="https://seu-projeto.supabase.co"
                           />
                       </div>
                       <div>
                           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">API Key (Anon)</label>
-                          <input 
-                              type="password"
-                              readOnly
-                              value={localStorage.getItem('custom_supabase_key') || ''}
-                              className="w-full p-2 bg-white dark:bg-slate-800 border rounded text-slate-600 dark:text-slate-300 text-sm font-mono"
-                          />
+                          <div className="relative">
+                            <input 
+                                type={showDbKey ? "text" : "password"}
+                                value={dbKey}
+                                onChange={(e) => setDbKey(e.target.value)}
+                                className="w-full p-2 bg-white dark:bg-slate-800 border rounded text-slate-600 dark:text-slate-300 text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:outline-none pr-10"
+                                placeholder="eyJ..."
+                            />
+                            <button 
+                                type="button"
+                                onClick={() => setShowDbKey(!showDbKey)}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                            >
+                                {showDbKey ? <EyeOff size={16}/> : <Eye size={16}/>}
+                            </button>
+                          </div>
                       </div>
                   </div>
                   
-                  <div className="mt-4 flex justify-end">
+                  <div className="mt-4 flex justify-end gap-3">
                       <button 
                           onClick={() => {
-                              if(confirm('Tem certeza? Você será desconectado e precisará inserir as novas chaves.')) {
+                              if(confirm('Isso desconectará o banco atual e limpará as chaves do navegador. Continuar?')) {
                                   resetDatabaseConfig();
                               }
                           }}
-                          className="px-4 py-2 bg-red-100 text-red-700 hover:bg-red-200 rounded text-sm font-bold flex items-center"
+                          className="px-4 py-2 bg-red-50 text-red-600 hover:bg-red-100 rounded text-sm font-bold flex items-center transition-colors"
                       >
-                          <RefreshCw size={16} className="mr-2"/> Alterar Conexão / Resetar
+                          <X size={16} className="mr-2"/> Desconectar / Limpar
+                      </button>
+                      <button 
+                          onClick={handleSaveConnection}
+                          className="px-4 py-2 bg-green-600 text-white hover:bg-green-700 rounded text-sm font-bold flex items-center transition-colors shadow-lg"
+                      >
+                          <Save size={16} className="mr-2"/> Salvar Conexão
                       </button>
                   </div>
               </div>
