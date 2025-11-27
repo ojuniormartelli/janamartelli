@@ -1,16 +1,16 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Função para obter URL explicitamente
+// Função para obter URL explicitamente (Vite requer acesso estático)
 const getUrl = () => {
-    // 1. Padrão VITE (Recomendado)
+    // 1. Tenta VITE_ (Padrão Vite)
     // @ts-ignore
-    if (import.meta.env && import.meta.env.VITE_SUPABASE_URL) return import.meta.env.VITE_SUPABASE_URL;
+    if (import.meta.env.VITE_SUPABASE_URL) return import.meta.env.VITE_SUPABASE_URL;
     
-    // 2. Tentativa de ler NEXT_PUBLIC no import.meta (caso envPrefix esteja alterado)
+    // 2. Tenta NEXT_PUBLIC_ (Padrão Vercel/Next) - TEM QUE SER EXPLÍCITO
     // @ts-ignore
-    if (import.meta.env && import.meta.env.NEXT_PUBLIC_SUPABASE_URL) return import.meta.env.NEXT_PUBLIC_SUPABASE_URL;
+    if (import.meta.env.NEXT_PUBLIC_SUPABASE_URL) return import.meta.env.NEXT_PUBLIC_SUPABASE_URL;
 
-    // 3. Fallback para process.env (Vercel injeta isso as vezes no build)
+    // 3. Fallback para process.env (Node/Vercel Runtime)
     try {
         // @ts-ignore
         if (typeof process !== 'undefined' && process.env) {
@@ -26,11 +26,13 @@ const getUrl = () => {
 
 // Função para obter Key explicitamente
 const getKey = () => {
+    // 1. Tenta VITE_
     // @ts-ignore
-    if (import.meta.env && import.meta.env.VITE_SUPABASE_ANON_KEY) return import.meta.env.VITE_SUPABASE_ANON_KEY;
+    if (import.meta.env.VITE_SUPABASE_ANON_KEY) return import.meta.env.VITE_SUPABASE_ANON_KEY;
     
+    // 2. Tenta NEXT_PUBLIC_ - TEM QUE SER EXPLÍCITO
     // @ts-ignore
-    if (import.meta.env && import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) return import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) return import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
     try {
         // @ts-ignore
@@ -55,16 +57,22 @@ const storedKey = localStorage.getItem('custom_supabase_key');
 // Flag global para saber se estamos em modo Gerenciado (Vercel) ou Manual
 export const isUsingEnv = !!(envUrl && envKey);
 
+// Log para Debug (Verifique o console do navegador se der erro)
+console.log('[PijamaManager Config]', {
+    isUsingEnv,
+    urlSource: envUrl ? 'ENV' : (storedUrl ? 'MANUAL' : 'NONE')
+});
+
 const SUPABASE_URL = isUsingEnv ? envUrl : (storedUrl || 'https://placeholder.supabase.co');
 const SUPABASE_ANON_KEY = isUsingEnv ? envKey : (storedKey || 'placeholder');
 
-// Verifica se o banco está configurado (seja por Env ou Local)
-export const isDbConfigured = !!((isUsingEnv) || (storedUrl && storedKey));
+// Verifica se o banco está configurado
+export const isDbConfigured = !!((isUsingEnv && envUrl && envKey) || (storedUrl && storedKey));
 
 // Inicializa o cliente
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// Configuração Manual (Só funciona se NÃO estiver usando Env Vars)
+// Funções de Configuração Manual
 export const configureDatabase = (url: string, key: string) => {
     if (isUsingEnv) return; 
     localStorage.setItem('custom_supabase_url', url);
@@ -72,7 +80,6 @@ export const configureDatabase = (url: string, key: string) => {
     window.location.reload(); 
 };
 
-// Reset Manual
 export const resetDatabaseConfig = () => {
     if (isUsingEnv) return;
     localStorage.removeItem('custom_supabase_url');

@@ -3,24 +3,21 @@ import { useAuth } from '../contexts/AuthContext';
 import { Lock, User, Eye, EyeOff, AlertTriangle, Database, X, Check, Copy, Wifi, WifiOff, Info } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { dbSetupScript } from '../utils/database.sql';
-import { isDbConfigured, supabase } from '../supabaseClient';
+import { isDbConfigured, supabase, isUsingEnv } from '../supabaseClient';
 
 export const Login: React.FC = () => {
   const { signIn } = useAuth();
   const navigate = useNavigate();
   
-  // Login State
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Connection Check
   const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'error'>('checking');
   const [envDebugInfo, setEnvDebugInfo] = useState<string>('');
 
-  // Install Modal State
   const [showInstallModal, setShowInstallModal] = useState(false);
   const [masterPass, setMasterPass] = useState('');
   const [showSql, setShowSql] = useState(false);
@@ -33,20 +30,25 @@ export const Login: React.FC = () => {
   const checkConnection = async () => {
       if (!isDbConfigured) {
           setConnectionStatus('error');
-          setEnvDebugInfo('Variáveis de ambiente não encontradas. Verifique se VITE_SUPABASE_URL ou NEXT_PUBLIC_SUPABASE_URL estão configuradas na Vercel.');
+          setEnvDebugInfo(`Variáveis de ambiente não encontradas. Verifique VITE_SUPABASE_URL ou NEXT_PUBLIC_SUPABASE_URL na Vercel.`);
           return;
       }
       try {
-          // Tenta uma query leve para validar conexão
+          // Teste simples de conexão
           const { error } = await supabase.from('store_settings').select('id').limit(1);
-          // Erro PGRST301 ou 404 geralmente significa que conectou mas tabela não existe (o que é normal antes do SQL)
+          
+          // Se der erro de tabela não encontrada (PGRST301/42P01), significa que CONECTOU, mas o SQL não foi rodado. Isso é "Connected".
           if (!error || error.code === 'PGRST301' || error.code === '42P01') { 
              setConnectionStatus('connected');
-          } else if (error.message && (error.message.includes('fetch') || error.code === '500')) {
-             setConnectionStatus('error');
-             setEnvDebugInfo(`Erro de rede: ${error.message}. Verifique a URL do Projeto.`);
           } else {
-             setConnectionStatus('connected');
+             // Se der erro de fetch ou 500, a conexão falhou
+             if (error.message && (error.message.includes('fetch') || error.code === '500')) {
+                 setConnectionStatus('error');
+                 setEnvDebugInfo(`Erro de Rede: ${error.message}`);
+             } else {
+                 // Outros erros (ex: Auth) significam que conectou
+                 setConnectionStatus('connected');
+             }
           }
       } catch (e: any) {
           setConnectionStatus('error');
@@ -75,7 +77,6 @@ export const Login: React.FC = () => {
   };
 
   const handleVerifyMasterPass = () => {
-      // Senha Mestra Hardcoded para liberar o SQL sem acesso ao banco
       if (masterPass === 'Gs020185*') {
           setShowSql(true);
       } else {
@@ -107,11 +108,11 @@ export const Login: React.FC = () => {
         )}
 
         {connectionStatus === 'error' && (
-             <div className="mb-6 p-3 bg-orange-50 border border-orange-200 text-orange-800 rounded-lg text-xs">
+             <div className="mb-6 p-3 bg-orange-50 border border-orange-200 text-orange-800 rounded-lg text-xs break-words">
                  <div className="flex items-center font-bold mb-1">
                      <Info size={14} className="mr-1"/> Diagnóstico de Conexão:
                  </div>
-                 {envDebugInfo || 'Banco de dados não configurado.'}
+                 {envDebugInfo}
              </div>
         )}
 
