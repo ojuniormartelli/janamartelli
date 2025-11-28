@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -39,17 +40,24 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [newAdminUser, setNewAdminUser] = useState('');
   const [newAdminPass, setNewAdminPass] = useState('');
 
+  // Initial Data Load
   useEffect(() => {
-    if (localStorage.getItem('theme') === 'dark') {
-      setDarkMode(true);
-      document.documentElement.classList.add('dark');
-    }
-    
-    if (!user?.isBootstrap) {
+    if (user && !user.isBootstrap) {
+        refreshUser(); // Garante que temos as preferências mais recentes do DB
         fetchStoreSettings();
         checkSecurityStatus();
     }
-  }, [user]);
+  }, []); // Run once on mount
+
+  // Sync Theme with User Preferences
+  useEffect(() => {
+    if (user?.preferences?.darkMode !== undefined) {
+        const isDark = user.preferences.darkMode;
+        setDarkMode(isDark);
+        if (isDark) document.documentElement.classList.add('dark');
+        else document.documentElement.classList.remove('dark');
+    }
+  }, [user]); // Run whenever user object updates
 
   const checkSecurityStatus = async () => {
       // Se não é bootstrap (tem banco) e o usuário logado ainda é o 'admin'
@@ -100,15 +108,21 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       }
   };
 
-  const toggleTheme = () => {
+  const toggleTheme = async () => {
     const newMode = !darkMode;
     setDarkMode(newMode);
-    if (newMode) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
+    
+    // UI Update Immediate
+    if (newMode) document.documentElement.classList.add('dark');
+    else document.documentElement.classList.remove('dark');
+
+    // DB Persistence
+    if (user && !user.isBootstrap) {
+        const currentPrefs = user.preferences || {};
+        const newPrefs = { ...currentPrefs, darkMode: newMode };
+        
+        await supabase.from('profiles').update({ preferences: newPrefs }).eq('id', user.id);
+        refreshUser(); // Update context to reflect changes
     }
   };
 

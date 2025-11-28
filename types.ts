@@ -1,10 +1,14 @@
 
+
 export interface Profile {
   id: string;
   username: string;
   role: 'admin' | 'employee';
   password?: string; // Campo opcional para tipagem, mas obrigatório no DB
   isBootstrap?: boolean; // Flag para indicar modo de instalação/configuração
+  preferences?: {
+      darkMode?: boolean;
+  };
 }
 
 export interface Client {

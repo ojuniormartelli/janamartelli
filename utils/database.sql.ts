@@ -1,3 +1,5 @@
+
+
 export interface Migration {
     id: string;
     date: string;
@@ -35,6 +37,7 @@ CREATE TABLE public.profiles (
   username TEXT UNIQUE NOT NULL,
   password TEXT DEFAULT 'Gs020185*', -- Senha inicial Segura
   role TEXT CHECK (role IN ('admin', 'employee')) DEFAULT 'admin',
+  preferences JSONB DEFAULT '{"darkMode": false}'::jsonb, -- PREFERÊNCIAS DE USUÁRIO (TEMA)
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -230,6 +233,12 @@ export const migrations: Migration[] = [
         date: '2025-02-25 18:30',
         description: 'Instalação Completa (Supabase) - Admin Seguro',
         sql: fullInstallScript
+    },
+    {
+        id: 'add_user_preferences',
+        date: '2025-02-26 10:00',
+        description: 'Adicionar Preferências de Usuário (Tema no DB)',
+        sql: `ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS preferences JSONB DEFAULT '{"darkMode": false}'::jsonb;`
     }
 ];
 
