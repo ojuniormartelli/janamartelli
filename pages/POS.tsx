@@ -159,7 +159,11 @@ export const POS: React.FC = () => {
   // Logic for final calculation
   const discountInput = parseFloat(discountVal.replace(',', '.')) || 0;
   
-  const subTotalWithInterest = applyInterest 
+  // Only apply interest if it's Credit AND toggle is on
+  const selectedMethod = paymentMethods.find(m => m.id === selectedMethodId);
+  const isCredit = selectedMethod?.type === 'credit';
+  
+  const subTotalWithInterest = (isCredit && applyInterest)
     ? rawTotal * (1 + (interestRate / 100)) 
     : rawTotal;
   
@@ -208,6 +212,7 @@ export const POS: React.FC = () => {
     const { data: code } = await supabase.rpc('get_next_code', { prefix });
 
     const method = paymentMethods.find(m => m.id === selectedMethodId);
+    const isCreditPayment = method?.type === 'credit';
 
     // 2. Create Header
     const { data: sale, error } = await supabase.from('vendas').insert({
@@ -219,11 +224,11 @@ export const POS: React.FC = () => {
         payment_status: transactionType === 'sale' ? 'paid' : 'pending',
         status_label: transactionType === 'sale' ? 'Venda' : 'Condicional',
         payment_details: { 
-            installments, 
-            interest_rate: applyInterest ? interestRate : 0, 
+            installments: isCreditPayment ? installments : 1, 
+            interest_rate: (isCreditPayment && applyInterest) ? interestRate : 0, 
             raw_value: rawTotal,
             method_type: method?.type,
-            interest_applied: applyInterest,
+            interest_applied: (isCreditPayment && applyInterest),
             discount_applied: calculatedDiscountValue,
             discount_type: discountType
         }
@@ -303,8 +308,6 @@ export const POS: React.FC = () => {
     p.nome.toLowerCase().includes(search.toLowerCase()) || 
     p.variations?.some(v => v.model_variant.toLowerCase().includes(search.toLowerCase()) || v.sku.toLowerCase().includes(search.toLowerCase()))
   );
-
-  const selectedMethod = paymentMethods.find(m => m.id === selectedMethodId);
 
   // Helper to get sorted installments keys
   const getInstallmentOptions = () => {
@@ -525,7 +528,8 @@ export const POS: React.FC = () => {
                             </div>
                         </div>
 
-                        {selectedMethod?.rates && Object.keys(selectedMethod.rates).length > 0 && (
+                        {/* EXIBIR PARCELAMENTO APENAS SE FOR CRÉDITO */}
+                        {selectedMethod?.type === 'credit' && selectedMethod?.rates && Object.keys(selectedMethod.rates).length > 0 && (
                              <div>
                                 <label className="block text-sm font-medium mb-1 dark:text-slate-300">Parcelamento</label>
                                 <select 
@@ -542,7 +546,8 @@ export const POS: React.FC = () => {
                              </div>
                         )}
 
-                        {interestRate > 0 && (
+                        {/* EXIBIR JUROS APENAS SE FOR CRÉDITO */}
+                        {selectedMethod?.type === 'credit' && interestRate > 0 && (
                             <div className="flex items-center gap-2 p-2 bg-slate-50 dark:bg-slate-700/50 rounded border dark:border-slate-600">
                                 <input 
                                     type="checkbox" 
@@ -605,7 +610,7 @@ export const POS: React.FC = () => {
                             <span>Subtotal</span>
                             <span>{formatCurrency(rawTotal)}</span>
                         </div>
-                        {interestRate > 0 && applyInterest && (
+                        {selectedMethod?.type === 'credit' && interestRate > 0 && applyInterest && (
                             <div className="flex justify-between text-sm text-red-500">
                                 <span>Juros ({interestRate}%)</span>
                                 <span>+ {formatCurrency(rawTotal * (interestRate/100))}</span>
@@ -622,7 +627,7 @@ export const POS: React.FC = () => {
                     <div className="text-center mt-4">
                         <p className="text-sm text-slate-500 dark:text-slate-400 uppercase tracking-wide">Valor Final</p>
                         <p className="text-4xl font-bold text-slate-800 dark:text-white mt-1">{formatCurrency(finalTotal)}</p>
-                        {installments > 1 && applyInterest && (
+                        {installments > 1 && applyInterest && isCredit && (
                             <p className="text-sm text-primary-600 mt-1">{installments}x de {formatCurrency(finalTotal/installments)}</p>
                         )}
                     </div>
