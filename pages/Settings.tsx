@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect } from 'react';
 import { supabase, resetDatabaseConfig, isUsingEnv } from '../supabaseClient';
 import { migrations } from '../utils/database.sql';
-import { Profile } from '../types';
+import { Profile, PaymentMethod } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { 
   Server, 
@@ -24,13 +25,15 @@ import {
   Upload,
   Image as ImageIcon,
   Globe,
-  AlertOctagon
+  AlertOctagon,
+  CreditCard,
+  Percent
 } from 'lucide-react';
 
 export const Settings: React.FC = () => {
   const { user } = useAuth();
   // Se for bootstrap, força aba database
-  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'database'>(user?.isBootstrap ? 'database' : 'general');
+  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'payments' | 'database'>(user?.isBootstrap ? 'database' : 'general');
   const [loading, setLoading] = useState(false);
   
   // Store Settings State
@@ -47,6 +50,17 @@ export const Settings: React.FC = () => {
   const [editingUser, setEditingUser] = useState<Profile | null>(null);
   const [userForm, setUserForm] = useState({ username: '', password: '', role: 'employee' });
 
+  // Payments Tab State
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [editingMethod, setEditingMethod] = useState<PaymentMethod | null>(null);
+  const [paymentForm, setPaymentForm] = useState<{
+      name: string;
+      type: 'credit' | 'debit' | 'pix' | 'cash';
+      active: boolean;
+      rates: Record<string, number>;
+  }>({ name: '', type: 'credit', active: true, rates: {} });
+
   // Database Tab State
   const [backupLoading, setBackupLoading] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
@@ -61,6 +75,7 @@ export const Settings: React.FC = () => {
     if (!user?.isBootstrap) {
         fetchSettings();
         if (activeTab === 'users') fetchUsers();
+        if (activeTab === 'payments') fetchPaymentMethods();
     }
     if (activeTab === 'database') loadConnectionInfo();
   }, [activeTab]);
@@ -87,6 +102,12 @@ export const Settings: React.FC = () => {
       if(user?.isBootstrap) return;
       const { data } = await supabase.from('profiles').select('*').order('username');
       if(data) setUsers(data as any);
+  };
+
+  const fetchPaymentMethods = async () => {
+      if(user?.isBootstrap) return;
+      const { data } = await supabase.from('payment_methods').select('*').order('id');
+      if(data) setPaymentMethods(data as any);
   };
 
   const handleSaveSettings = async () => {
@@ -157,6 +178,70 @@ export const Settings: React.FC = () => {
       if(!confirm("Excluir usuário?")) return;
       await supabase.from('profiles').delete().eq('id', id);
       fetchUsers();
+  };
+
+  // --- PAYMENT ACTIONS ---
+  const handleOpenPaymentModal = (method?: PaymentMethod) => {
+      if (method) {
+          setEditingMethod(method);
+          setPaymentForm({
+              name: method.name,
+              type: method.type,
+              active: method.active,
+              rates: method.rates || {}
+          });
+      } else {
+          setEditingMethod(null);
+          // Default rates structure
+          const defaultRates: Record<string, number> = {};
+          for(let i=1; i<=12; i++) defaultRates[i.toString()] = 0;
+
+          setPaymentForm({
+              name: '',
+              type: 'credit',
+              active: true,
+              rates: defaultRates
+          });
+      }
+      setIsPaymentModalOpen(true);
+  };
+
+  const handleRateChange = (installment: string, value: string) => {
+      const numValue = parseFloat(value);
+      if (isNaN(numValue)) return;
+      setPaymentForm(prev => ({
+          ...prev,
+          rates: { ...prev.rates, [installment]: numValue }
+      }));
+  };
+
+  const handleSavePaymentMethod = async () => {
+      if (!paymentForm.name) return alert("Nome é obrigatório");
+
+      const payload = { ...paymentForm };
+      
+      // Limpar rates se não for crédito
+      if (payload.type !== 'credit') {
+          payload.rates = {};
+      }
+
+      if (editingMethod) {
+          const { error } = await supabase.from('payment_methods').update(payload).eq('id', editingMethod.id);
+          if (error) alert("Erro ao atualizar: " + error.message);
+      } else {
+          const { error } = await supabase.from('payment_methods').insert(payload);
+          if (error) alert("Erro ao criar: " + error.message);
+      }
+      
+      setIsPaymentModalOpen(false);
+      fetchPaymentMethods();
+  };
+
+  const handleDeletePaymentMethod = async (id: number) => {
+      if(!confirm("Excluir forma de pagamento? Vendas antigas manterão o registro histórico.")) return;
+      const { error } = await supabase.from('payment_methods').delete().eq('id', id);
+      if (error) alert("Erro ao excluir. Tente desativar ao invés de excluir.");
+      else fetchPaymentMethods();
   };
 
   // --- DB ACTIONS ---
@@ -247,26 +332,32 @@ export const Settings: React.FC = () => {
         </h2>
       </div>
 
-      <div className="flex space-x-4 border-b border-slate-200 dark:border-slate-700">
+      <div className="flex space-x-4 border-b border-slate-200 dark:border-slate-700 overflow-x-auto">
         {!user?.isBootstrap && (
             <>
                 <button 
                     onClick={() => setActiveTab('general')}
-                    className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors ${activeTab === 'general' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                    className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors whitespace-nowrap ${activeTab === 'general' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                 >
                     Geral
                 </button>
                 <button 
                     onClick={() => setActiveTab('users')}
-                    className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors ${activeTab === 'users' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                    className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors whitespace-nowrap ${activeTab === 'users' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                 >
                     Usuários
+                </button>
+                <button 
+                    onClick={() => setActiveTab('payments')}
+                    className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors whitespace-nowrap ${activeTab === 'payments' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                >
+                    Pagamentos
                 </button>
             </>
         )}
         <button 
             onClick={() => setActiveTab('database')}
-            className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors ${activeTab === 'database' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+            className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors whitespace-nowrap ${activeTab === 'database' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
         >
             Banco de Dados
         </button>
@@ -388,6 +479,65 @@ export const Settings: React.FC = () => {
                       ))}
                   </tbody>
               </table>
+          </div>
+      )}
+
+      {/* --- ABA PAGAMENTOS --- */}
+      {activeTab === 'payments' && !user?.isBootstrap && (
+          <div className="space-y-6">
+              <div className="bg-white dark:bg-slate-800 rounded-lg shadow overflow-hidden">
+                  <div className="p-4 border-b dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
+                      <h3 className="font-bold dark:text-white flex items-center"><CreditCard className="mr-2" size={20}/> Formas de Pagamento</h3>
+                      <button onClick={() => handleOpenPaymentModal()} className="flex items-center px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-700 font-bold text-sm">
+                          <Plus size={16} className="mr-2"/> Nova Forma
+                      </button>
+                  </div>
+                  <table className="w-full text-left">
+                      <thead className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-sm">
+                          <tr>
+                              <th className="p-4">Nome</th>
+                              <th className="p-4">Tipo</th>
+                              <th className="p-4">Parcelamento (Juros)</th>
+                              <th className="p-4 text-center">Ações</th>
+                          </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                          {paymentMethods.map(m => (
+                              <tr key={m.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                                  <td className="p-4 font-bold dark:text-white">{m.name}</td>
+                                  <td className="p-4">
+                                      <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${
+                                          m.type === 'credit' ? 'bg-purple-100 text-purple-700' :
+                                          m.type === 'debit' ? 'bg-blue-100 text-blue-700' :
+                                          m.type === 'pix' ? 'bg-green-100 text-green-700' :
+                                          'bg-slate-100 text-slate-700'
+                                      }`}>
+                                          {m.type === 'credit' ? 'Crédito' : m.type === 'debit' ? 'Débito' : m.type === 'pix' ? 'Pix' : 'Dinheiro'}
+                                      </span>
+                                  </td>
+                                  <td className="p-4 text-sm text-slate-500">
+                                      {m.type === 'credit' ? (
+                                          <div className="flex flex-wrap gap-1">
+                                              {Object.entries(m.rates || {}).sort((a,b) => parseInt(a[0]) - parseInt(b[0])).slice(0, 4).map(([p, rate]) => (
+                                                  <span key={p} className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-600 rounded text-[10px]">
+                                                      {p}x: {rate}%
+                                                  </span>
+                                              ))}
+                                              {Object.keys(m.rates || {}).length > 4 && <span className="text-[10px] text-slate-400">...</span>}
+                                          </div>
+                                      ) : '-'}
+                                  </td>
+                                  <td className="p-4 text-center">
+                                      <div className="flex justify-center gap-2">
+                                          <button onClick={() => handleOpenPaymentModal(m)} className="p-2 text-blue-600 hover:bg-blue-50 rounded"><Edit2 size={16}/></button>
+                                          <button onClick={() => handleDeletePaymentMethod(m.id)} className="p-2 text-red-600 hover:bg-red-50 rounded"><Trash2 size={16}/></button>
+                                      </div>
+                                  </td>
+                              </tr>
+                          ))}
+                      </tbody>
+                  </table>
+              </div>
           </div>
       )}
 
@@ -585,6 +735,75 @@ export const Settings: React.FC = () => {
                           </select>
                       </div>
                       <button onClick={handleSaveUser} className="w-full py-2 bg-primary-600 text-white rounded font-bold mt-4">Salvar</button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* MODAL PAGAMENTO */}
+      {isPaymentModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+                  <div className="p-6 border-b dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
+                      <h3 className="text-lg font-bold dark:text-white flex items-center">
+                          <CreditCard className="mr-2" size={20}/>
+                          {editingMethod ? 'Editar Forma de Pagamento' : 'Nova Forma de Pagamento'}
+                      </h3>
+                      <button onClick={() => setIsPaymentModalOpen(false)}><X size={20} className="text-slate-400"/></button>
+                  </div>
+                  <div className="p-6 overflow-y-auto">
+                      <div className="space-y-4">
+                          <div>
+                              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Nome (Ex: Visa, Pix)</label>
+                              <input 
+                                  value={paymentForm.name}
+                                  onChange={e => setPaymentForm({...paymentForm, name: e.target.value})}
+                                  className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                              />
+                          </div>
+                          <div>
+                              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tipo</label>
+                              <select 
+                                  value={paymentForm.type}
+                                  onChange={e => setPaymentForm({...paymentForm, type: e.target.value as any})}
+                                  className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                              >
+                                  <option value="credit">Crédito (Permite Parcelar)</option>
+                                  <option value="debit">Débito</option>
+                                  <option value="pix">Pix</option>
+                                  <option value="cash">Dinheiro</option>
+                              </select>
+                          </div>
+                          
+                          {paymentForm.type === 'credit' && (
+                              <div className="bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg border dark:border-slate-600">
+                                  <h4 className="font-bold text-sm mb-2 dark:text-white flex items-center"><Percent size={14} className="mr-2"/> Configuração de Taxas (Juros)</h4>
+                                  <p className="text-xs text-slate-500 mb-3">Defina a taxa (%) cobrada pela maquininha para cada parcela. O sistema calculará o repasse automaticamente no caixa.</p>
+                                  
+                                  <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-1">
+                                      {Object.keys(paymentForm.rates || {}).sort((a,b) => parseInt(a) - parseInt(b)).map(parcela => (
+                                          <div key={parcela} className="flex items-center gap-1 bg-white dark:bg-slate-800 p-2 rounded border dark:border-slate-600">
+                                              <span className="text-xs font-bold dark:text-slate-300 w-6">{parcela}x</span>
+                                              <input 
+                                                  type="number"
+                                                  step="0.01"
+                                                  value={paymentForm.rates[parcela]}
+                                                  onChange={e => handleRateChange(parcela, e.target.value)}
+                                                  className="w-full p-1 text-right text-sm border-0 bg-transparent focus:ring-0 dark:text-white"
+                                                  placeholder="0.0"
+                                              />
+                                              <span className="text-xs text-slate-400">%</span>
+                                          </div>
+                                      ))}
+                                      {/* Add buttons to increase range if needed, for now using 12 */}
+                                  </div>
+                              </div>
+                          )}
+                      </div>
+                  </div>
+                  <div className="p-4 border-t dark:border-slate-700 flex justify-end gap-3 bg-slate-50 dark:bg-slate-900/50">
+                       <button onClick={() => setIsPaymentModalOpen(false)} className="px-4 py-2 text-slate-500 font-medium">Cancelar</button>
+                       <button onClick={handleSavePaymentMethod} className="px-6 py-2 bg-primary-600 text-white rounded font-bold hover:bg-primary-700">Salvar</button>
                   </div>
               </div>
           </div>

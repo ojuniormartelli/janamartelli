@@ -239,6 +239,30 @@ export const migrations: Migration[] = [
         date: '2025-02-26 10:00',
         description: 'Adicionar Preferências de Usuário (Tema no DB)',
         sql: `ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS preferences JSONB DEFAULT '{"darkMode": false}'::jsonb;`
+    },
+    {
+        id: 'ensure_payment_methods',
+        date: '2025-02-26 12:00',
+        description: 'Garantir tabela de métodos de pagamento',
+        sql: `
+        CREATE TABLE IF NOT EXISTS public.payment_methods (
+          id SERIAL PRIMARY KEY,
+          name TEXT NOT NULL,
+          type TEXT CHECK (type IN ('credit', 'debit', 'pix', 'cash')),
+          rates JSONB DEFAULT '{}'::jsonb,
+          active BOOLEAN DEFAULT TRUE,
+          created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        -- Permissões
+        ALTER TABLE payment_methods ENABLE ROW LEVEL SECURITY;
+        DROP POLICY IF EXISTS "Public Access Payments" ON payment_methods;
+        CREATE POLICY "Public Access Payments" ON payment_methods FOR ALL USING (true) WITH CHECK (true);
+        -- Dados padrão se vazio
+        INSERT INTO payment_methods (name, type, rates) 
+        SELECT 'Dinheiro', 'cash', '{}' WHERE NOT EXISTS (SELECT 1 FROM payment_methods);
+        INSERT INTO payment_methods (name, type, rates) 
+        SELECT 'Pix', 'pix', '{}' WHERE NOT EXISTS (SELECT 1 FROM payment_methods WHERE type='pix');
+        `
     }
 ];
 
