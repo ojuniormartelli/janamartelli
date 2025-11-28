@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Product, CartItem, Client, ProductVariation, PaymentMethod } from '../types';
-import { Search, ShoppingBag, Trash, UserPlus, CheckCircle, X, Save, User, Mail, MapPin, AlertCircle, Tag, TrendingDown } from 'lucide-react';
+import { Search, ShoppingBag, Trash, UserPlus, CheckCircle, X, Save, User, Mail, MapPin, AlertCircle, Tag, TrendingDown, DollarSign, Percent } from 'lucide-react';
 import { formatCurrency, maskCPF, maskPhone, getLocalDate } from '../utils/formatters';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -29,7 +29,10 @@ export const POS: React.FC = () => {
   const [installments, setInstallments] = useState(1);
   const [interestRate, setInterestRate] = useState(0);
   const [applyInterest, setApplyInterest] = useState(true);
-  const [discountVal, setDiscountVal] = useState(''); // New Discount State
+  
+  // Discount States
+  const [discountVal, setDiscountVal] = useState(''); 
+  const [discountType, setDiscountType] = useState<'money' | 'percent'>('money');
 
   // Modals
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
@@ -154,12 +157,18 @@ export const POS: React.FC = () => {
   const rawTotal = cart.reduce((acc, item) => acc + (item.customPrice || item.variation.price_sale) * item.quantity, 0);
   
   // Logic for final calculation
-  const discountNum = parseFloat(discountVal.replace(',', '.')) || 0;
+  const discountInput = parseFloat(discountVal.replace(',', '.')) || 0;
+  
   const subTotalWithInterest = applyInterest 
     ? rawTotal * (1 + (interestRate / 100)) 
     : rawTotal;
   
-  const finalTotal = Math.max(0, subTotalWithInterest - discountNum);
+  // Calculate discount amount based on type
+  const calculatedDiscountValue = discountType === 'percent' 
+    ? subTotalWithInterest * (discountInput / 100)
+    : discountInput;
+
+  const finalTotal = Math.max(0, subTotalWithInterest - calculatedDiscountValue);
 
   const handleOpenPayment = (type: 'sale' | 'quote') => {
       if (!selectedClient) {
@@ -168,6 +177,7 @@ export const POS: React.FC = () => {
       }
       setTransactionType(type);
       setDiscountVal(''); // Reset discount
+      setDiscountType('money');
       setIsPaymentModalOpen(true);
       if (paymentMethods.length > 0) handleMethodSelect(paymentMethods[0].id);
   };
@@ -214,7 +224,8 @@ export const POS: React.FC = () => {
             raw_value: rawTotal,
             method_type: method?.type,
             interest_applied: applyInterest,
-            discount_applied: discountNum
+            discount_applied: calculatedDiscountValue,
+            discount_type: discountType
         }
     }).select().single();
 
@@ -552,17 +563,39 @@ export const POS: React.FC = () => {
                     {/* Discount Input */}
                     {transactionType === 'sale' && (
                         <div className="mb-4">
-                            <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Desconto (R$)</label>
-                            <div className="relative">
-                                <TrendingDown className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16}/>
-                                <input 
-                                    type="number"
-                                    step="0.01"
-                                    className="w-full pl-9 p-2 rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-800 dark:text-white font-medium"
-                                    placeholder="0,00"
-                                    value={discountVal}
-                                    onChange={e => setDiscountVal(e.target.value)}
-                                />
+                            <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Desconto</label>
+                            <div className="flex gap-2">
+                                <div className="flex rounded-md shadow-sm">
+                                    <button 
+                                        type="button"
+                                        onClick={() => setDiscountType('money')}
+                                        className={`px-3 py-2 text-sm font-medium border rounded-l-md ${discountType === 'money' ? 'bg-white text-primary-600 border-primary-500' : 'bg-slate-100 text-slate-500 border-slate-300'}`}
+                                    >
+                                        R$
+                                    </button>
+                                    <button 
+                                        type="button"
+                                        onClick={() => setDiscountType('percent')}
+                                        className={`px-3 py-2 text-sm font-medium border rounded-r-md border-l-0 ${discountType === 'percent' ? 'bg-white text-primary-600 border-primary-500' : 'bg-slate-100 text-slate-500 border-slate-300'}`}
+                                    >
+                                        %
+                                    </button>
+                                </div>
+                                <div className="relative flex-1">
+                                    {discountType === 'money' ? (
+                                        <TrendingDown className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16}/>
+                                    ) : (
+                                        <Percent className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16}/>
+                                    )}
+                                    <input 
+                                        type="number"
+                                        step="0.01"
+                                        className="w-full pl-9 p-2 rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-800 dark:text-white font-medium"
+                                        placeholder="0,00"
+                                        value={discountVal}
+                                        onChange={e => setDiscountVal(e.target.value)}
+                                    />
+                                </div>
                             </div>
                         </div>
                     )}
@@ -578,10 +611,10 @@ export const POS: React.FC = () => {
                                 <span>+ {formatCurrency(rawTotal * (interestRate/100))}</span>
                             </div>
                         )}
-                        {discountNum > 0 && (
+                        {calculatedDiscountValue > 0 && (
                             <div className="flex justify-between text-sm text-green-600">
-                                <span>Desconto</span>
-                                <span>- {formatCurrency(discountNum)}</span>
+                                <span>Desconto {discountType === 'percent' ? `(${discountVal}%)` : ''}</span>
+                                <span>- {formatCurrency(calculatedDiscountValue)}</span>
                             </div>
                         )}
                     </div>
