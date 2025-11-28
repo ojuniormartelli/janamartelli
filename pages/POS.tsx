@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Product, CartItem, Client, ProductVariation, PaymentMethod } from '../types';
-import { Search, ShoppingBag, Trash, UserPlus, CheckCircle, X, Save, User, Mail, MapPin, AlertCircle, Tag } from 'lucide-react';
+import { Search, ShoppingBag, Trash, UserPlus, CheckCircle, X, Save, User, Mail, MapPin, AlertCircle, Tag, TrendingDown } from 'lucide-react';
 import { formatCurrency, maskCPF, maskPhone, getLocalDate } from '../utils/formatters';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -29,13 +29,14 @@ export const POS: React.FC = () => {
   const [installments, setInstallments] = useState(1);
   const [interestRate, setInterestRate] = useState(0);
   const [applyInterest, setApplyInterest] = useState(true);
+  const [discountVal, setDiscountVal] = useState(''); // New Discount State
 
   // Modals
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isNewClientModalOpen, setIsNewClientModalOpen] = useState(false);
   const [newClientData, setNewClientData] = useState({ full_name: '', cpf: '', phone: '', email: '', address: '' });
   
-  // Discount Modal State
+  // Discount Modal State (Item level)
   const [discountItemIndex, setDiscountItemIndex] = useState<number | null>(null);
   const [discountValue, setDiscountValue] = useState('');
 
@@ -152,9 +153,13 @@ export const POS: React.FC = () => {
 
   const rawTotal = cart.reduce((acc, item) => acc + (item.customPrice || item.variation.price_sale) * item.quantity, 0);
   
-  const finalTotal = applyInterest 
+  // Logic for final calculation
+  const discountNum = parseFloat(discountVal.replace(',', '.')) || 0;
+  const subTotalWithInterest = applyInterest 
     ? rawTotal * (1 + (interestRate / 100)) 
     : rawTotal;
+  
+  const finalTotal = Math.max(0, subTotalWithInterest - discountNum);
 
   const handleOpenPayment = (type: 'sale' | 'quote') => {
       if (!selectedClient) {
@@ -162,6 +167,7 @@ export const POS: React.FC = () => {
           return;
       }
       setTransactionType(type);
+      setDiscountVal(''); // Reset discount
       setIsPaymentModalOpen(true);
       if (paymentMethods.length > 0) handleMethodSelect(paymentMethods[0].id);
   };
@@ -207,7 +213,8 @@ export const POS: React.FC = () => {
             interest_rate: applyInterest ? interestRate : 0, 
             raw_value: rawTotal,
             method_type: method?.type,
-            interest_applied: applyInterest
+            interest_applied: applyInterest,
+            discount_applied: discountNum
         }
     }).select().single();
 
@@ -287,6 +294,13 @@ export const POS: React.FC = () => {
   );
 
   const selectedMethod = paymentMethods.find(m => m.id === selectedMethodId);
+
+  // Helper to get sorted installments keys
+  const getInstallmentOptions = () => {
+      if (!selectedMethod?.rates) return [];
+      return Object.keys(selectedMethod.rates)
+        .sort((a,b) => parseInt(a) - parseInt(b));
+  };
 
   return (
     <div className="flex h-[calc(100vh-6rem)] gap-4">
@@ -508,8 +522,10 @@ export const POS: React.FC = () => {
                                     onChange={e => handleInstallmentChange(Number(e.target.value))}
                                     className="w-full p-2 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                                 >
-                                    {Object.keys(selectedMethod.rates).map(i => (
-                                        <option key={i} value={i}>{i}x (Juros: {selectedMethod.rates[i]}%)</option>
+                                    {getInstallmentOptions().map(i => (
+                                        <option key={i} value={i}>
+                                            {i}x {selectedMethod.rates[i] > 0 ? `(Juros: ${selectedMethod.rates[i]}%)` : '(Sem Juros)'}
+                                        </option>
                                     ))}
                                 </select>
                              </div>
@@ -533,19 +549,44 @@ export const POS: React.FC = () => {
                 )}
 
                 <div className="bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg mb-6 border border-slate-100 dark:border-slate-600">
-                    {interestRate > 0 && applyInterest && (
-                        <div className="flex justify-between text-sm text-slate-500 mb-1">
+                    {/* Discount Input */}
+                    {transactionType === 'sale' && (
+                        <div className="mb-4">
+                            <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Desconto (R$)</label>
+                            <div className="relative">
+                                <TrendingDown className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16}/>
+                                <input 
+                                    type="number"
+                                    step="0.01"
+                                    className="w-full pl-9 p-2 rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-800 dark:text-white font-medium"
+                                    placeholder="0,00"
+                                    value={discountVal}
+                                    onChange={e => setDiscountVal(e.target.value)}
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="space-y-1 border-t border-slate-200 dark:border-slate-600 pt-3">
+                         <div className="flex justify-between text-sm text-slate-500">
                             <span>Subtotal</span>
                             <span>{formatCurrency(rawTotal)}</span>
                         </div>
-                    )}
-                    {interestRate > 0 && applyInterest && (
-                        <div className="flex justify-between text-sm text-red-500 mb-2">
-                            <span>Juros ({interestRate}%)</span>
-                            <span>+ {formatCurrency(finalTotal - rawTotal)}</span>
-                        </div>
-                    )}
-                    <div className="text-center">
+                        {interestRate > 0 && applyInterest && (
+                            <div className="flex justify-between text-sm text-red-500">
+                                <span>Juros ({interestRate}%)</span>
+                                <span>+ {formatCurrency(rawTotal * (interestRate/100))}</span>
+                            </div>
+                        )}
+                        {discountNum > 0 && (
+                            <div className="flex justify-between text-sm text-green-600">
+                                <span>Desconto</span>
+                                <span>- {formatCurrency(discountNum)}</span>
+                            </div>
+                        )}
+                    </div>
+                   
+                    <div className="text-center mt-4">
                         <p className="text-sm text-slate-500 dark:text-slate-400 uppercase tracking-wide">Valor Final</p>
                         <p className="text-4xl font-bold text-slate-800 dark:text-white mt-1">{formatCurrency(finalTotal)}</p>
                         {installments > 1 && applyInterest && (

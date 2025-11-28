@@ -27,7 +27,8 @@ import {
   Globe,
   AlertOctagon,
   CreditCard,
-  Percent
+  Percent,
+  Layers
 } from 'lucide-react';
 
 export const Settings: React.FC = () => {
@@ -60,6 +61,9 @@ export const Settings: React.FC = () => {
       active: boolean;
       rates: Record<string, number>;
   }>({ name: '', type: 'credit', active: true, rates: {} });
+  
+  // Auxiliary state for Max Installments in modal
+  const [maxInstallments, setMaxInstallments] = useState(12);
 
   // Database Tab State
   const [backupLoading, setBackupLoading] = useState(false);
@@ -190,20 +194,39 @@ export const Settings: React.FC = () => {
               active: method.active,
               rates: method.rates || {}
           });
+          // Determine max installments based on existing rates
+          const max = Object.keys(method.rates || {}).reduce((a, b) => Math.max(a, parseInt(b)), 1);
+          setMaxInstallments(max > 1 ? max : 12);
       } else {
           setEditingMethod(null);
-          // Default rates structure
-          const defaultRates: Record<string, number> = {};
-          for(let i=1; i<=12; i++) defaultRates[i.toString()] = 0;
-
+          // Default: 1x rate is 0
+          const defaultRates: Record<string, number> = { "1": 0 };
+          
           setPaymentForm({
               name: '',
               type: 'credit',
               active: true,
               rates: defaultRates
           });
+          setMaxInstallments(12);
       }
       setIsPaymentModalOpen(true);
+  };
+
+  const handleMaxInstallmentsChange = (val: number) => {
+      setMaxInstallments(val);
+      setPaymentForm(prev => {
+          const newRates = { ...prev.rates };
+          // Add missing keys
+          for(let i=1; i<=val; i++) {
+              if (newRates[i.toString()] === undefined) newRates[i.toString()] = 0;
+          }
+          // Remove excess keys
+          Object.keys(newRates).forEach(k => {
+              if (parseInt(k) > val) delete newRates[k];
+          });
+          return { ...prev, rates: newRates };
+      });
   };
 
   const handleRateChange = (installment: string, value: string) => {
@@ -223,6 +246,13 @@ export const Settings: React.FC = () => {
       // Limpar rates se não for crédito
       if (payload.type !== 'credit') {
           payload.rates = {};
+      } else {
+          // Ensure correct number of installments in JSON
+          const finalRates: Record<string, number> = {};
+          for(let i=1; i<=maxInstallments; i++) {
+              finalRates[i.toString()] = payload.rates[i.toString()] || 0;
+          }
+          payload.rates = finalRates;
       }
 
       if (editingMethod) {
@@ -780,8 +810,27 @@ export const Settings: React.FC = () => {
                                   <h4 className="font-bold text-sm mb-2 dark:text-white flex items-center"><Percent size={14} className="mr-2"/> Configuração de Taxas (Juros)</h4>
                                   <p className="text-xs text-slate-500 mb-3">Defina a taxa (%) cobrada pela maquininha para cada parcela. O sistema calculará o repasse automaticamente no caixa.</p>
                                   
+                                  <div className="mb-4">
+                                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Máximo de Parcelas</label>
+                                      <div className="flex items-center gap-2">
+                                          <Layers size={16} className="text-slate-400"/>
+                                          <select 
+                                              value={maxInstallments}
+                                              onChange={e => handleMaxInstallmentsChange(parseInt(e.target.value))}
+                                              className="p-1 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white text-sm"
+                                          >
+                                              {[...Array(18)].map((_, i) => (
+                                                  <option key={i+1} value={i+1}>{i+1}x</option>
+                                              ))}
+                                          </select>
+                                      </div>
+                                  </div>
+
                                   <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-1">
-                                      {Object.keys(paymentForm.rates || {}).sort((a,b) => parseInt(a) - parseInt(b)).map(parcela => (
+                                      {Object.keys(paymentForm.rates || {})
+                                          .filter(k => parseInt(k) <= maxInstallments)
+                                          .sort((a,b) => parseInt(a) - parseInt(b))
+                                          .map(parcela => (
                                           <div key={parcela} className="flex items-center gap-1 bg-white dark:bg-slate-800 p-2 rounded border dark:border-slate-600">
                                               <span className="text-xs font-bold dark:text-slate-300 w-6">{parcela}x</span>
                                               <input 
@@ -795,7 +844,6 @@ export const Settings: React.FC = () => {
                                               <span className="text-xs text-slate-400">%</span>
                                           </div>
                                       ))}
-                                      {/* Add buttons to increase range if needed, for now using 12 */}
                                   </div>
                               </div>
                           )}
