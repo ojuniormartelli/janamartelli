@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase, resetDatabaseConfig, isUsingEnv } from '../supabaseClient';
 import { migrations } from '../utils/database.sql';
 import { Profile, PaymentMethod } from '../types';
@@ -28,7 +28,8 @@ import {
   AlertOctagon,
   CreditCard,
   Percent,
-  Layers
+  Layers,
+  FileJson
 } from 'lucide-react';
 
 export const Settings: React.FC = () => {
@@ -67,8 +68,10 @@ export const Settings: React.FC = () => {
 
   // Database Tab State
   const [backupLoading, setBackupLoading] = useState(false);
+  const [restoreLoading, setRestoreLoading] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  const restoreInputRef = useRef<HTMLInputElement>(null);
   
   // Connection State
   const [dbUrl, setDbUrl] = useState('');
@@ -278,12 +281,27 @@ export const Settings: React.FC = () => {
   const handleFullBackup = async () => {
     setBackupLoading(true);
     try {
-        const tables = ['profiles', 'clients', 'products', 'estoque_tamanhos', 'vendas', 'venda_itens', 'payment_methods', 'store_settings', 'bank_accounts', 'transactions'];
-        const backupData: Record<string, any> = {};
+        const tables = [
+            'store_settings', 
+            'profiles', 
+            'clients', 
+            'payment_methods', 
+            'products', 
+            'estoque_tamanhos', 
+            'bank_accounts', 
+            'vendas', 
+            'venda_itens', 
+            'transactions'
+        ];
+        const backupData: Record<string, any> = {
+            timestamp: new Date().toISOString(),
+            version: '1.0',
+            data: {}
+        };
         
         for(const table of tables) {
             const { data } = await supabase.from(table).select('*');
-            backupData[table] = data;
+            backupData.data[table] = data || [];
         }
 
         const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
@@ -294,10 +312,76 @@ export const Settings: React.FC = () => {
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-    } catch (e) {
-        alert('Erro ao gerar backup');
+    } catch (e: any) {
+        alert('Erro ao gerar backup: ' + e.message);
     }
     setBackupLoading(false);
+  };
+
+  const handleRestoreBackup = async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      
+      if (!confirm("ATENÇÃO: Isso tentará inserir/atualizar todos os dados do arquivo no seu banco de dados atual.\n\nRecomendado para restaurar dados perdidos ou clonar ambientes.\n\nDeseja continuar?")) {
+          if (restoreInputRef.current) restoreInputRef.current.value = '';
+          return;
+      }
+
+      setRestoreLoading(true);
+      const reader = new FileReader();
+      
+      reader.onload = async (e) => {
+          try {
+              const content = e.target?.result as string;
+              if (!content) throw new Error("Arquivo vazio");
+              
+              const json = JSON.parse(content);
+              const data = json.data;
+              
+              if (!data) throw new Error("Formato de backup inválido");
+
+              // Ordem estrita de dependência para evitar FK Errors
+              const order = [
+                  'store_settings', 
+                  'profiles', 
+                  'payment_methods', 
+                  'clients', 
+                  'products', 
+                  'estoque_tamanhos', 
+                  'bank_accounts',
+                  'vendas',
+                  'venda_itens',
+                  'transactions'
+              ];
+
+              let successCount = 0;
+              let errorCount = 0;
+
+              for (const table of order) {
+                  if (data[table] && Array.isArray(data[table]) && data[table].length > 0) {
+                      // Usar UPSERT para evitar erros de duplicidade
+                      const { error } = await supabase.from(table).upsert(data[table]);
+                      if (error) {
+                          console.error(`Erro restaurando ${table}:`, error);
+                          errorCount++;
+                      } else {
+                          successCount++;
+                      }
+                  }
+              }
+
+              alert(`Restauração concluída!\nTabelas processadas: ${successCount}\nErros: ${errorCount}`);
+              window.location.reload(); // Recarregar para mostrar dados novos
+
+          } catch (err: any) {
+              alert("Falha na restauração: " + err.message);
+          } finally {
+              setRestoreLoading(false);
+              if (restoreInputRef.current) restoreInputRef.current.value = '';
+          }
+      };
+      
+      reader.readAsText(file);
   };
 
   const handleSyncFinancial = async () => {
@@ -698,18 +782,39 @@ export const Settings: React.FC = () => {
                           <div>
                               <h3 className="text-lg font-bold text-blue-800 dark:text-blue-300 flex items-center"><Shield className="mr-2" size={20}/> Backup & Segurança</h3>
                               <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">
-                                  Baixe uma cópia completa dos dados (JSON) ou sincronize vendas antigas com o financeiro.
+                                  Gerencie a integridade dos seus dados. Faça backups regulares.
                               </p>
                           </div>
-                          <div className="flex flex-col gap-2">
+                          
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            {/* BACKUP BUTTON */}
                             <button 
                                 onClick={handleFullBackup}
-                                disabled={backupLoading}
+                                disabled={backupLoading || restoreLoading}
                                 className="px-6 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow flex items-center whitespace-nowrap disabled:opacity-50 justify-center"
                             >
                                 {backupLoading ? <Loader size={18} className="animate-spin mr-2"/> : <DownloadCloud size={18} className="mr-2"/>}
-                                Backup JSON
+                                Fazer Backup (JSON)
                             </button>
+
+                            {/* RESTORE BUTTON */}
+                            <button 
+                                onClick={() => restoreInputRef.current?.click()}
+                                disabled={backupLoading || restoreLoading}
+                                className="px-6 py-3 bg-amber-500 text-white rounded-lg font-bold hover:bg-amber-600 shadow flex items-center whitespace-nowrap disabled:opacity-50 justify-center relative"
+                            >
+                                {restoreLoading ? <Loader size={18} className="animate-spin mr-2"/> : <FileJson size={18} className="mr-2"/>}
+                                Restaurar Backup
+                            </button>
+                            <input 
+                                type="file" 
+                                accept=".json" 
+                                ref={restoreInputRef} 
+                                className="hidden"
+                                onChange={handleRestoreBackup}
+                            />
+                            
+                            {/* SYNC BUTTON */}
                             <button 
                                 onClick={handleSyncFinancial}
                                 disabled={syncLoading}
