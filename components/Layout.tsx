@@ -16,8 +16,7 @@ import {
   Sun,
   Menu,
   X,
-  Wallet,
-  ShieldAlert
+  Wallet
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -35,17 +34,11 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       logo_url: ''
   });
 
-  // Security Force Update State
-  const [showSecurityModal, setShowSecurityModal] = useState(false);
-  const [newAdminUser, setNewAdminUser] = useState('');
-  const [newAdminPass, setNewAdminPass] = useState('');
-
   // Initial Data Load
   useEffect(() => {
     if (user && !user.isBootstrap) {
         refreshUser(); // Garante que temos as preferências mais recentes do DB
         fetchStoreSettings();
-        checkSecurityStatus();
     }
   }, []); // Run once on mount
 
@@ -58,36 +51,6 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         else document.documentElement.classList.remove('dark');
     }
   }, [user]); // Run whenever user object updates
-
-  const checkSecurityStatus = async () => {
-      // Se não é bootstrap (tem banco) e o usuário logado ainda é o 'admin'
-      if (user && user.username === 'admin') {
-          // Check if password is still the default from SQL (Gs020185*)
-          const { data } = await supabase.from('profiles').select('password').eq('username', 'admin').single();
-          if (data && data.password === 'Gs020185*') {
-              setShowSecurityModal(true);
-          }
-      }
-  };
-
-  const handleCreateNewAdmin = async () => {
-      if (!newAdminUser || !newAdminPass) return alert("Preencha todos os campos");
-      if (newAdminPass.length < 6) return alert("Senha muito curta");
-
-      // 1. Create NEW admin user
-      const { error } = await supabase.from('profiles').insert({
-          username: newAdminUser,
-          password: newAdminPass,
-          role: 'admin'
-      });
-
-      if (error) {
-          alert("Erro ao criar novo usuário: " + error.message);
-      } else {
-          alert("Novo usuário administrador criado com sucesso! Por favor, faça login com ele.");
-          await signOut();
-      }
-  };
 
   const fetchStoreSettings = async () => {
       const { data } = await supabase.from('store_settings').select('*').single();
@@ -150,47 +113,6 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-200">
       
-      {/* SECURITY MODAL */}
-      {showSecurityModal && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm">
-              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md p-8 border-2 border-red-500">
-                  <div className="text-center mb-6">
-                      <ShieldAlert size={48} className="mx-auto text-red-500 mb-2"/>
-                      <h2 className="text-2xl font-bold text-slate-800 dark:text-white">Ação Necessária</h2>
-                      <p className="text-slate-600 dark:text-slate-300 mt-2">
-                          Você está usando a conta de instalação padrão. Por segurança, crie agora o seu usuário administrador pessoal.
-                      </p>
-                  </div>
-                  
-                  <div className="space-y-4">
-                      <div>
-                          <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Seu Nome de Usuário</label>
-                          <input 
-                              className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white"
-                              placeholder="Ex: seu.nome"
-                              value={newAdminUser} onChange={e => setNewAdminUser(e.target.value)}
-                          />
-                      </div>
-                      <div>
-                          <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Sua Senha</label>
-                          <input 
-                              type="text"
-                              className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white"
-                              placeholder="Mínimo 6 caracteres"
-                              value={newAdminPass} onChange={e => setNewAdminPass(e.target.value)}
-                          />
-                      </div>
-                      <button 
-                          onClick={handleCreateNewAdmin}
-                          className="w-full py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 shadow-lg mt-4"
-                      >
-                          Criar Usuário e Acessar
-                      </button>
-                  </div>
-              </div>
-          </div>
-      )}
-
       {mobileMenuOpen && (
         <div className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={() => setMobileMenuOpen(false)} />
       )}
