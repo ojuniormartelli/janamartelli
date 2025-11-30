@@ -70,6 +70,7 @@ export const Settings: React.FC = () => {
   const [backupLoading, setBackupLoading] = useState(false);
   const [restoreLoading, setRestoreLoading] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
+  const [progress, setProgress] = useState(0); // Estado para a barra de progresso
   const [copied, setCopied] = useState<string | null>(null);
   const restoreInputRef = useRef<HTMLInputElement>(null);
   
@@ -280,6 +281,7 @@ export const Settings: React.FC = () => {
   // --- DB ACTIONS ---
   const handleFullBackup = async () => {
     setBackupLoading(true);
+    setProgress(0);
     try {
         const tables = [
             'store_settings', 
@@ -299,9 +301,14 @@ export const Settings: React.FC = () => {
             data: {}
         };
         
-        for(const table of tables) {
+        for(let i = 0; i < tables.length; i++) {
+            const table = tables[i];
             const { data } = await supabase.from(table).select('*');
             backupData.data[table] = data || [];
+            
+            // Update progress
+            const percentage = Math.round(((i + 1) / tables.length) * 100);
+            setProgress(percentage);
         }
 
         const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
@@ -316,6 +323,7 @@ export const Settings: React.FC = () => {
         alert('Erro ao gerar backup: ' + e.message);
     }
     setBackupLoading(false);
+    setProgress(0);
   };
 
   const handleRestoreBackup = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -328,6 +336,7 @@ export const Settings: React.FC = () => {
       }
 
       setRestoreLoading(true);
+      setProgress(0);
       const reader = new FileReader();
       
       reader.onload = async (e) => {
@@ -357,7 +366,8 @@ export const Settings: React.FC = () => {
               let successCount = 0;
               let errorCount = 0;
 
-              for (const table of order) {
+              for (let i = 0; i < order.length; i++) {
+                  const table = order[i];
                   if (data[table] && Array.isArray(data[table]) && data[table].length > 0) {
                       // Usar UPSERT para evitar erros de duplicidade
                       const { error } = await supabase.from(table).upsert(data[table]);
@@ -368,7 +378,13 @@ export const Settings: React.FC = () => {
                           successCount++;
                       }
                   }
+                  // Update progress
+                  const percentage = Math.round(((i + 1) / order.length) * 100);
+                  setProgress(percentage);
               }
+
+              // Small delay to show 100%
+              await new Promise(resolve => setTimeout(resolve, 500));
 
               alert(`Restauração concluída!\nTabelas processadas: ${successCount}\nErros: ${errorCount}`);
               window.location.reload(); // Recarregar para mostrar dados novos
@@ -377,6 +393,7 @@ export const Settings: React.FC = () => {
               alert("Falha na restauração: " + err.message);
           } finally {
               setRestoreLoading(false);
+              setProgress(0);
               if (restoreInputRef.current) restoreInputRef.current.value = '';
           }
       };
@@ -779,11 +796,25 @@ export const Settings: React.FC = () => {
               {!user?.isBootstrap && (
                   <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6">
                       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                          <div>
+                          <div className="flex-1">
                               <h3 className="text-lg font-bold text-blue-800 dark:text-blue-300 flex items-center"><Shield className="mr-2" size={20}/> Backup & Segurança</h3>
-                              <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">
+                              <p className="text-sm text-blue-600 dark:text-blue-400 mt-1 mb-2">
                                   Gerencie a integridade dos seus dados. Faça backups regulares.
                               </p>
+                              
+                              {/* Barra de Progresso */}
+                              {(backupLoading || restoreLoading) && (
+                                  <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-4 mt-2 mb-2 overflow-hidden relative">
+                                      <div 
+                                          className={`h-full rounded-full transition-all duration-300 ${restoreLoading ? 'bg-amber-500' : 'bg-blue-600'}`}
+                                          style={{ width: `${progress}%` }}
+                                      >
+                                           <div className="absolute top-0 right-0 bottom-0 left-0 flex items-center justify-center text-[10px] text-white font-bold drop-shadow-md">
+                                               {progress}%
+                                           </div>
+                                      </div>
+                                  </div>
+                              )}
                           </div>
                           
                           <div className="flex flex-col sm:flex-row gap-2">
@@ -794,7 +825,7 @@ export const Settings: React.FC = () => {
                                 className="px-6 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow flex items-center whitespace-nowrap disabled:opacity-50 justify-center"
                             >
                                 {backupLoading ? <Loader size={18} className="animate-spin mr-2"/> : <DownloadCloud size={18} className="mr-2"/>}
-                                Fazer Backup (JSON)
+                                {backupLoading ? `Gerando ${progress}%` : 'Fazer Backup (JSON)'}
                             </button>
 
                             {/* RESTORE BUTTON */}
@@ -804,7 +835,7 @@ export const Settings: React.FC = () => {
                                 className="px-6 py-3 bg-amber-500 text-white rounded-lg font-bold hover:bg-amber-600 shadow flex items-center whitespace-nowrap disabled:opacity-50 justify-center relative"
                             >
                                 {restoreLoading ? <Loader size={18} className="animate-spin mr-2"/> : <FileJson size={18} className="mr-2"/>}
-                                Restaurar Backup
+                                {restoreLoading ? `Restaurando ${progress}%` : 'Restaurar Backup'}
                             </button>
                             <input 
                                 type="file" 
@@ -817,11 +848,11 @@ export const Settings: React.FC = () => {
                             {/* SYNC BUTTON */}
                             <button 
                                 onClick={handleSyncFinancial}
-                                disabled={syncLoading}
+                                disabled={syncLoading || backupLoading || restoreLoading}
                                 className="px-6 py-2 bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200 rounded-lg font-bold hover:bg-slate-300 shadow flex items-center whitespace-nowrap disabled:opacity-50 justify-center text-sm"
                             >
                                 {syncLoading ? <Loader size={16} className="animate-spin mr-2"/> : <RefreshCw size={16} className="mr-2"/>}
-                                Sincronizar Financeiro
+                                Sincronizar
                             </button>
                           </div>
                       </div>

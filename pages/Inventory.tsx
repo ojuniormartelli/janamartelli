@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { Product, ProductVariation } from '../types';
-import { ChevronDown, ChevronRight, Plus, AlertTriangle, FileSpreadsheet, Loader, Trash2, Edit2, X, Save, Search, RefreshCw, ArrowUpDown, Download } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, AlertTriangle, FileSpreadsheet, Loader, Trash2, Edit2, X, Save, Search, RefreshCw, ArrowUpDown, Download, Layers } from 'lucide-react';
 import { formatCurrency, parseCurrencyString, getLocalDate } from '../utils/formatters';
 
 type SortField = 'modelo' | 'nome' | 'categoria' | 'stock';
@@ -20,14 +20,18 @@ export const Inventory: React.FC = () => {
   
   // Search & Sort
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortConfig, setSortConfig] = useState<{ field: SortField; direction: 'asc' | 'desc' }>({ field: 'nome', direction: 'asc' });
+  const [sortConfig, setSortConfig] = useState<{ field: SortField; direction: 'asc' | 'desc' }>({ field: 'modelo', direction: 'asc' });
 
   // State for editing a specific variation
   const [editingVariation, setEditingVariation] = useState<ProductVariation | null>(null);
 
+  // State for editing the PARENT Product (Group)
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+
   // New Product Form State
   const [newProduct, setNewProduct] = useState({ 
     nome: '', 
+    modelo: '', // Added Reference field
     categoria: '', 
     variations: [] as any[] 
   });
@@ -108,11 +112,8 @@ export const Inventory: React.FC = () => {
 
   // --- LOGIC: IMPORT, EXPORT & CRUD ---
   const handleExportCSV = () => {
-      // Header: SKU, Referencia, Nome, Modelo, Categoria, Tamanho, Quantidade, Preco_Custo, Preco_Venda
       const header = "SKU,Referencia,Nome,Modelo,Categoria,Tamanho,Quantidade,Preco_Custo,Preco_Venda\n";
-      
       const rows: string[] = [];
-      
       products.forEach(p => {
           if (p.variations && p.variations.length > 0) {
               p.variations.forEach(v => {
@@ -131,29 +132,16 @@ export const Inventory: React.FC = () => {
                   rows.push(row);
               });
           } else {
-               // Produto sem variação (raro, mas possível)
                const escape = (t: any) => `"${(t || '').toString().replace(/"/g, '""')}"`;
-               const row = [
-                  "",
-                  escape(p.modelo),
-                  escape(p.nome),
-                  "",
-                  escape(p.categoria),
-                  "",
-                  0,
-                  "0,00",
-                  "0,00"
-               ].join(',');
+               const row = ["", escape(p.modelo), escape(p.nome), "", escape(p.categoria), "", 0, "0,00", "0,00"].join(',');
                rows.push(row);
           }
       });
-
-      const csvContent = header + rows.join('\n');
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const blob = new Blob([header + rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `estoque_completo_${new Date().toISOString().slice(0,10)}.csv`);
+      link.setAttribute('download', `estoque_${new Date().toISOString().slice(0,10)}.csv`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -187,7 +175,6 @@ export const Inventory: React.FC = () => {
       const lines = text.split('\n');
       let successCount = 0;
       let errorCount = 0;
-      let errorMsg = "";
       
       const { data: existingProducts } = await supabase.from('products').select('id, modelo');
       const productCache = new Map<string, string>();
@@ -234,24 +221,11 @@ export const Inventory: React.FC = () => {
                     price_sale: parseCurrencyString(saleStr),
                     reference: referencia
                 }, { onConflict: 'product_id, model_variant, size' });
-                
-                if (error) {
-                    errorCount++;
-                    errorMsg = error.message;
-                } else {
-                    successCount++;
-                }
+                if (error) errorCount++; else successCount++;
             }
-        } catch (err: any) { 
-            errorCount++; 
-            errorMsg = err.message;
-        }
+        } catch (err: any) { errorCount++; }
       }
-      
-      let msg = `Importação concluída!\nSucessos: ${successCount}\nErros: ${errorCount}`;
-      if (errorCount > 0 && errorMsg) msg += `\nÚltimo Erro: ${errorMsg}`;
-      
-      alert(msg);
+      alert(`Importação concluída!\nSucessos: ${successCount}\nErros: ${errorCount}`);
       setImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
       fetchInventory();
@@ -261,24 +235,16 @@ export const Inventory: React.FC = () => {
 
   const handleReportLoss = async (variant: ProductVariation) => {
     if (!confirm(`Baixar 1 unidade defeituosa de "${variant.model_variant} - ${variant.size}"?`)) return;
-    
-    // 0. Generate "B" Code
     const { data: code } = await supabase.rpc('get_next_code', { prefix: 'B' });
 
-    // 1. Create a "Loss" sale record for financial tracking in SALES History
-    const { data: lossSale, error: saleError } = await supabase.from('vendas').insert({
+    const { data: lossSale } = await supabase.from('vendas').insert({
         code: code,
-        total_value: variant.price_cost, // Record cost as value
+        total_value: variant.price_cost,
         payment_status: 'loss',
         status_label: 'Baixa',
         payment_method: 'Perda',
         observacoes: `Baixa de item defeituoso: ${variant.sku}`
     }).select().single();
-
-    if (saleError) {
-        alert("Erro ao registrar baixa: " + saleError.message);
-        return;
-    }
 
     if (lossSale) {
         await supabase.from('venda_itens').insert({
@@ -288,12 +254,8 @@ export const Inventory: React.FC = () => {
             unit_price: 0,
             original_cost: variant.price_cost
         });
-
-        // 2. Register Financial Transaction (Expense) for Cash Flow
-        // Find default account to attribute the loss
         const { data: defaultAccount } = await supabase.from('bank_accounts').select('*').eq('is_default', true).single();
         const accountId = defaultAccount ? defaultAccount.id : (await supabase.from('bank_accounts').select('id').limit(1).single()).data?.id;
-
         if (accountId) {
              await supabase.from('transactions').insert({
                  description: `Baixa Estoque: ${code} - ${variant.sku}`,
@@ -303,36 +265,22 @@ export const Inventory: React.FC = () => {
                  category: 'Perdas',
                  date: getLocalDate()
              });
-             // Update account balance (reduce asset value)
              if (defaultAccount) {
                  await supabase.from('bank_accounts').update({ balance: defaultAccount.balance - variant.price_cost }).eq('id', accountId);
              }
         }
     }
-
-    // 3. Reduce Stock
-    const { error } = await supabase.from('estoque_tamanhos').update({ quantity: variant.quantity - 1 }).eq('id', variant.id);
-    if (!error) {
-        alert(`Baixa registrada com sucesso! Código: ${code}`);
-        fetchInventory();
-    }
+    await supabase.from('estoque_tamanhos').update({ quantity: variant.quantity - 1 }).eq('id', variant.id);
+    fetchInventory();
   };
 
   const handleReplenish = async () => {
       if(!replenishModal) return;
       const qty = parseInt(replenishModal.qtyToAdd);
       if(isNaN(qty) || qty <= 0) return alert("Quantidade inválida");
-
-      const { error } = await supabase
-        .from('estoque_tamanhos')
-        .update({ quantity: replenishModal.variant.quantity + qty })
-        .eq('id', replenishModal.variant.id);
-      
+      const { error } = await supabase.from('estoque_tamanhos').update({ quantity: replenishModal.variant.quantity + qty }).eq('id', replenishModal.variant.id);
       if(error) alert("Erro ao atualizar estoque");
-      else {
-          setReplenishModal(null);
-          fetchInventory();
-      }
+      else { setReplenishModal(null); fetchInventory(); }
   };
 
   const handleDeleteVariation = async (id: string) => {
@@ -358,6 +306,23 @@ export const Inventory: React.FC = () => {
     if (!error) { setEditingVariation(null); fetchInventory(); }
   };
 
+  const handleSaveProductEdit = async () => {
+    if (!editingProduct) return;
+    if (!editingProduct.nome || !editingProduct.modelo) return alert("Nome e Referência são obrigatórios");
+    
+    const { error } = await supabase.from('products').update({
+        nome: editingProduct.nome,
+        modelo: editingProduct.modelo,
+        categoria: editingProduct.categoria
+    }).eq('id', editingProduct.id);
+
+    if (error) alert("Erro ao atualizar produto: " + error.message);
+    else {
+        setEditingProduct(null);
+        fetchInventory();
+    }
+  };
+
   const handleAddTempVar = () => {
     if (!tempVar.model || !tempVar.sku) return alert("Modelo e SKU obrigatórios");
     setNewProduct(prev => ({
@@ -379,7 +344,7 @@ export const Inventory: React.FC = () => {
     const { data: parent } = await supabase.from('products').insert({
         nome: newProduct.nome,
         categoria: newProduct.categoria,
-        modelo: 'Geral',
+        modelo: newProduct.modelo || 'Geral', // Use user provided model
         descricao: newProduct.nome
     }).select().single();
 
@@ -387,28 +352,18 @@ export const Inventory: React.FC = () => {
         const payload = newProduct.variations.map(v => ({ product_id: parent.id, ...v }));
         await supabase.from('estoque_tamanhos').insert(payload);
         setIsNewProductModalOpen(false);
-        setNewProduct({ nome: '', categoria: '', variations: [] });
+        setNewProduct({ nome: '', modelo: '', categoria: '', variations: [] });
         fetchInventory();
     }
   };
 
-  // --- LOGIC: ADD VARIANT TO EXISTING ---
   const openAddVariantModal = (productId: string) => {
-      setNewVariant({
-          productId,
-          model: '',
-          size: 'M',
-          sku: '',
-          quantity: 0,
-          price_cost: '',
-          price_sale: ''
-      });
+      setNewVariant({ productId, model: '', size: 'M', sku: '', quantity: 0, price_cost: '', price_sale: '' });
       setIsAddVariantModalOpen(true);
   };
 
   const handleSaveNewVariant = async () => {
       if(!newVariant.model || !newVariant.sku) return alert("Preencha Modelo e SKU");
-      
       const { error } = await supabase.from('estoque_tamanhos').insert({
           product_id: newVariant.productId,
           model_variant: newVariant.model,
@@ -418,12 +373,8 @@ export const Inventory: React.FC = () => {
           price_cost: parseCurrencyString(newVariant.price_cost),
           price_sale: parseCurrencyString(newVariant.price_sale)
       });
-
-      if(error) alert("Erro ao criar variação: " + error.message);
-      else {
-          setIsAddVariantModalOpen(false);
-          fetchInventory();
-      }
+      if(error) alert("Erro: " + error.message);
+      else { setIsAddVariantModalOpen(false); fetchInventory(); }
   };
 
 
@@ -437,7 +388,6 @@ export const Inventory: React.FC = () => {
             <p className="text-sm text-slate-500">Agrupado por Referência (Nome)</p>
         </div>
         
-        {/* Search Bar */}
         <div className="flex-1 max-w-md w-full relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
             <input 
@@ -450,32 +400,20 @@ export const Inventory: React.FC = () => {
         </div>
 
         <div className="flex gap-2 w-full xl:w-auto">
-          <button 
-            onClick={handleExportCSV}
-            className="flex items-center px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-600 text-sm"
-            title="Exportar Estoque Completo para CSV"
-          >
-            <Download className="mr-2" size={16} />
-            Exportar
+          <button onClick={handleExportCSV} className="flex items-center px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-600 text-sm">
+            <Download className="mr-2" size={16} /> Exportar
           </button>
           
-          <button 
-            onClick={() => fileInputRef.current?.click()}
-            disabled={importing}
-            className="flex items-center px-4 py-2 bg-slate-200 text-slate-700 rounded hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-200 disabled:opacity-50 text-sm"
-          >
-            {importing ? <Loader className="mr-2 animate-spin" size={16} /> : <FileSpreadsheet className="mr-2" size={16} />}
-            Importar
+          <button onClick={() => fileInputRef.current?.click()} disabled={importing} className="flex items-center px-4 py-2 bg-slate-200 text-slate-700 rounded hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-200 disabled:opacity-50 text-sm">
+            {importing ? <Loader className="mr-2 animate-spin" size={16} /> : <FileSpreadsheet className="mr-2" size={16} />} Importar
           </button>
           
           <button onClick={() => setIsNewProductModalOpen(true)} className="flex items-center px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-700 text-sm whitespace-nowrap">
-            <Plus className="mr-2" size={16} />
-            Novo Produto
+            <Plus className="mr-2" size={16} /> Novo Produto
           </button>
         </div>
       </div>
 
-      {/* ... Rest of the component (Tables, Modals) - No changes needed below ... */}
       <div className="bg-white dark:bg-slate-800 rounded-lg shadow overflow-hidden">
         {loading ? (
             <div className="p-8 text-center text-slate-500">Carregando estoque...</div>
@@ -484,24 +422,24 @@ export const Inventory: React.FC = () => {
             <thead className="bg-slate-50 dark:bg-slate-700">
                 <tr>
                 <th className="p-4 w-10"></th>
-                <th className="p-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors group" onClick={() => handleSort('modelo')}>
+                <th className="p-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-600" onClick={() => handleSort('modelo')}>
                     <div className="flex items-center text-slate-600 dark:text-slate-300 font-semibold">
-                        Referência <ArrowUpDown size={14} className="ml-2 opacity-50 group-hover:opacity-100" />
+                        Referência <ArrowUpDown size={14} className="ml-2 opacity-50" />
                     </div>
                 </th>
-                <th className="p-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors group" onClick={() => handleSort('nome')}>
+                <th className="p-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-600" onClick={() => handleSort('nome')}>
                     <div className="flex items-center text-slate-600 dark:text-slate-300 font-semibold">
-                        Nome <ArrowUpDown size={14} className="ml-2 opacity-50 group-hover:opacity-100" />
+                        Nome <ArrowUpDown size={14} className="ml-2 opacity-50" />
                     </div>
                 </th>
-                <th className="p-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors group" onClick={() => handleSort('categoria')}>
+                <th className="p-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-600" onClick={() => handleSort('categoria')}>
                     <div className="flex items-center text-slate-600 dark:text-slate-300 font-semibold">
-                        Categoria <ArrowUpDown size={14} className="ml-2 opacity-50 group-hover:opacity-100" />
+                        Categoria <ArrowUpDown size={14} className="ml-2 opacity-50" />
                     </div>
                 </th>
-                <th className="p-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors group text-right" onClick={() => handleSort('stock')}>
+                <th className="p-4 text-right cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-600" onClick={() => handleSort('stock')}>
                     <div className="flex items-center justify-end text-slate-600 dark:text-slate-300 font-semibold">
-                        Total em Estoque <ArrowUpDown size={14} className="ml-2 opacity-50 group-hover:opacity-100" />
+                        Total Estoque <ArrowUpDown size={14} className="ml-2 opacity-50" />
                     </div>
                 </th>
                 <th className="p-4 text-center text-slate-600 dark:text-slate-300 font-semibold">Ações</th>
@@ -531,9 +469,16 @@ export const Inventory: React.FC = () => {
                             </td>
                             <td className="p-4 text-right flex items-center justify-end gap-2">
                                 <button 
+                                    onClick={() => setEditingProduct(product)}
+                                    className="p-2 text-slate-400 hover:text-blue-600 transition-colors"
+                                    title="Editar Grupo (Nome/Referência)"
+                                >
+                                    <Edit2 size={16} />
+                                </button>
+                                <button 
                                     onClick={() => openAddVariantModal(product.id)}
                                     className="flex items-center px-2 py-1 text-xs bg-primary-100 text-primary-700 rounded hover:bg-primary-200 transition-colors"
-                                    title="Adicionar Novo Tamanho/Cor neste Produto"
+                                    title="Adicionar Novo Tamanho/Cor"
                                 >
                                     <Plus size={14} className="mr-1"/> Var
                                 </button>
@@ -569,30 +514,13 @@ export const Inventory: React.FC = () => {
                                         <td className="py-2 px-4 text-right">
                                             <div className="flex items-center justify-end gap-2">
                                                 <span className={`font-bold ${v.quantity <= 2 ? 'text-red-500' : 'dark:text-white'}`}>{v.quantity}</span>
-                                                <button 
-                                                    onClick={() => setReplenishModal({ variant: v, qtyToAdd: '' })}
-                                                    className="p-1 rounded-full bg-green-100 text-green-700 hover:bg-green-200" title="Repor Estoque"
-                                                >
-                                                    <RefreshCw size={10} />
-                                                </button>
+                                                <button onClick={() => setReplenishModal({ variant: v, qtyToAdd: '' })} className="p-1 rounded-full bg-green-100 text-green-700 hover:bg-green-200" title="Repor"><RefreshCw size={10} /></button>
                                             </div>
                                         </td>
                                         <td className="py-2 px-4 flex justify-center gap-2">
-                                            <button 
-                                                onClick={() => setEditingVariation(v)}
-                                                className="p-1 text-blue-500 hover:bg-blue-50 rounded" title="Editar">
-                                                <Edit2 size={14} />
-                                            </button>
-                                            <button 
-                                                onClick={() => handleReportLoss(v)}
-                                                className="p-1 text-orange-500 hover:bg-orange-50 rounded" title="Baixa (Perda)">
-                                                <AlertTriangle size={14} />
-                                            </button>
-                                            <button 
-                                                onClick={() => handleDeleteVariation(v.id)}
-                                                className="p-1 text-red-500 hover:bg-red-50 rounded" title="Excluir Variação">
-                                                <Trash2 size={14} />
-                                            </button>
+                                            <button onClick={() => setEditingVariation(v)} className="p-1 text-blue-500 hover:bg-blue-50 rounded" title="Editar"><Edit2 size={14} /></button>
+                                            <button onClick={() => handleReportLoss(v)} className="p-1 text-orange-500 hover:bg-orange-50 rounded" title="Baixa"><AlertTriangle size={14} /></button>
+                                            <button onClick={() => handleDeleteVariation(v.id)} className="p-1 text-red-500 hover:bg-red-50 rounded" title="Excluir"><Trash2 size={14} /></button>
                                         </td>
                                     </tr>
                                 ))}
@@ -612,7 +540,7 @@ export const Inventory: React.FC = () => {
 
       {/* --- MODALS --- */}
 
-      {/* 1. NEW PRODUCT MODAL (COMPLETE) */}
+      {/* 1. NEW PRODUCT MODAL */}
       {isNewProductModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
           <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
@@ -621,8 +549,17 @@ export const Inventory: React.FC = () => {
             </div>
             
             <div className="p-6 overflow-y-auto flex-1 space-y-6">
-                <div className="grid grid-cols-2 gap-4">
-                    <div className="col-span-2 sm:col-span-1">
+                <div className="grid grid-cols-12 gap-4">
+                    <div className="col-span-4">
+                        <label className="block text-sm font-medium mb-1 dark:text-slate-300">Referência (Grupo)</label>
+                        <input 
+                            value={newProduct.modelo}
+                            onChange={e => setNewProduct({...newProduct, modelo: e.target.value})}
+                            placeholder="Ex: 6020-05" 
+                            className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white font-mono"
+                        />
+                    </div>
+                    <div className="col-span-8">
                         <label className="block text-sm font-medium mb-1 dark:text-slate-300">Nome do Produto</label>
                         <input 
                             value={newProduct.nome}
@@ -631,12 +568,12 @@ export const Inventory: React.FC = () => {
                             className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                         />
                     </div>
-                    <div className="col-span-2 sm:col-span-1">
+                    <div className="col-span-12">
                         <label className="block text-sm font-medium mb-1 dark:text-slate-300">Categoria</label>
                         <input 
                             value={newProduct.categoria}
                             onChange={e => setNewProduct({...newProduct, categoria: e.target.value})}
-                            placeholder="Ex: Feminino" 
+                            placeholder="Ex: Feminino / Verão" 
                             className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                         />
                     </div>
@@ -645,12 +582,9 @@ export const Inventory: React.FC = () => {
                 <div className="bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700">
                     <h4 className="font-bold text-sm mb-3 dark:text-white flex items-center"><Plus size={16} className="mr-2"/> Adicionar Variação</h4>
                     <div className="grid grid-cols-6 gap-2 mb-2">
-                        <input 
-                            placeholder="Modelo/Cor" className="col-span-2 p-2 text-sm border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white"
-                            value={tempVar.model} onChange={e => setTempVar({...tempVar, model: e.target.value})}
-                        />
+                        <input placeholder="Cor/Modelo (Ex: Azul)" className="col-span-2 p-2 text-sm border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" value={tempVar.model} onChange={e => setTempVar({...tempVar, model: e.target.value})} />
                         <select className="col-span-1 p-2 text-sm border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" value={tempVar.size} onChange={e => setTempVar({...tempVar, size: e.target.value})}>
-                            {['P','M','G','GG','XG','U'].map(s => <option key={s} value={s}>{s}</option>)}
+                            {['P','M','G','GG','XG','U','1','2','3','4','6','8','10'].map(s => <option key={s} value={s}>{s}</option>)}
                         </select>
                         <input placeholder="SKU" className="col-span-1 p-2 text-sm border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" value={tempVar.sku} onChange={e => setTempVar({...tempVar, sku: e.target.value})} />
                         <input placeholder="Qtd" type="number" className="col-span-1 p-2 text-sm border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" value={tempVar.qty} onChange={e => setTempVar({...tempVar, qty: Number(e.target.value)})} />
@@ -681,7 +615,53 @@ export const Inventory: React.FC = () => {
         </div>
       )}
 
-      {/* 2. ADD VARIANT TO EXISTING MODAL */}
+      {/* 2. EDIT PRODUCT PARENT MODAL */}
+      {editingProduct && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md p-6">
+                  <div className="flex justify-between items-center mb-6">
+                      <h3 className="text-lg font-bold dark:text-white flex items-center">
+                          <Edit2 size={20} className="mr-2"/> Editar Grupo de Produto
+                      </h3>
+                      <button onClick={() => setEditingProduct(null)}><X size={20} className="text-slate-400"/></button>
+                  </div>
+                  
+                  <div className="space-y-4">
+                      <div>
+                          <label className="block text-sm font-medium mb-1 dark:text-slate-300">Referência (Grupo)</label>
+                          <input 
+                              value={editingProduct.modelo || ''}
+                              onChange={e => setEditingProduct({...editingProduct, modelo: e.target.value})}
+                              className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white font-mono font-bold"
+                          />
+                      </div>
+                      <div>
+                          <label className="block text-sm font-medium mb-1 dark:text-slate-300">Nome do Produto</label>
+                          <input 
+                              value={editingProduct.nome}
+                              onChange={e => setEditingProduct({...editingProduct, nome: e.target.value})}
+                              className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                          />
+                      </div>
+                      <div>
+                          <label className="block text-sm font-medium mb-1 dark:text-slate-300">Categoria</label>
+                          <input 
+                              value={editingProduct.categoria}
+                              onChange={e => setEditingProduct({...editingProduct, categoria: e.target.value})}
+                              className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                          />
+                      </div>
+                      
+                      <div className="pt-4 flex justify-end gap-2">
+                          <button onClick={() => setEditingProduct(null)} className="px-4 py-2 text-slate-500">Cancelar</button>
+                          <button onClick={handleSaveProductEdit} className="px-4 py-2 bg-blue-600 text-white rounded font-bold hover:bg-blue-700">Salvar Alterações</button>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* 3. ADD VARIANT TO EXISTING MODAL */}
       {isAddVariantModalOpen && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
                <div className="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-xl w-full max-w-md">
@@ -722,7 +702,7 @@ export const Inventory: React.FC = () => {
           </div>
       )}
 
-      {/* 3. REPLENISH MODAL */}
+      {/* 4. REPLENISH MODAL */}
       {replenishModal && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
                <div className="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-xl w-80">
@@ -744,7 +724,7 @@ export const Inventory: React.FC = () => {
           </div>
       )}
 
-      {/* 4. EDIT VARIATION MODAL */}
+      {/* 5. EDIT VARIATION MODAL */}
       {editingVariation && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
               <div className="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-xl w-80">
