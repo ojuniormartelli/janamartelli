@@ -16,7 +16,7 @@ const getSizeWeight = (size: string) => {
 };
 
 export const POS: React.FC = () => {
-  const { user } = useAuth(); // Get authenticated user
+  const { user } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -85,7 +85,9 @@ export const POS: React.FC = () => {
 
   // --- HANDLE CONVERSION FROM SALES PAGE ---
   useEffect(() => {
-      if (location.state?.conversionSale && products.length > 0) {
+      // Logic runs immediately if state is present, doesn't wait for products
+      // We assume the data passed in state is sufficient to rebuild the cart
+      if (location.state?.conversionSale) {
           const sale = location.state.conversionSale;
           
           if (sale.client_id) {
@@ -109,10 +111,10 @@ export const POS: React.FC = () => {
               });
               setCart(convertedCart);
           }
-          
+          // Clean state to avoid re-triggering
           navigate(location.pathname, { replace: true, state: {} });
       }
-  }, [location.state, products]);
+  }, [location.state, navigate]);
 
   const addToCart = (product: Product, variation: ProductVariation) => {
     setCart(prev => {
@@ -309,7 +311,6 @@ export const POS: React.FC = () => {
     p.variations?.some(v => v.model_variant.toLowerCase().includes(search.toLowerCase()) || v.sku.toLowerCase().includes(search.toLowerCase()))
   );
 
-  // Helper to get sorted installments keys
   const getInstallmentOptions = () => {
       if (!selectedMethod?.rates) return [];
       return Object.keys(selectedMethod.rates)
@@ -466,7 +467,6 @@ export const POS: React.FC = () => {
                         <input className="p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="Telefone" value={newClientData.phone} onChange={e => setNewClientData({...newClientData, phone: maskPhone(e.target.value)})} />
                     </div>
                     
-                    {/* Novos campos adicionados */}
                     <input className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="E-mail (Opcional)" value={newClientData.email} onChange={e => setNewClientData({...newClientData, email: e.target.value})} />
                     <textarea 
                         className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white resize-none h-20" 
