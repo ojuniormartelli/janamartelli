@@ -1,6 +1,7 @@
 
 
 
+
 export interface Migration {
     id: string;
     date: string;
@@ -226,6 +227,24 @@ ON CONFLICT DO NOTHING;
 INSERT INTO bank_accounts (name, balance, is_default, color) 
 VALUES ('Caixa Loja', 0, true, '#10b981') 
 ON CONFLICT DO NOTHING;
+`;
+
+// --- SCRIPT DE CORREÇÃO DE SEQUÊNCIAS ---
+export const fixSequencesSQL = `
+-- CORREÇÃO DE IDS DUPLICADOS (Sincronização de Sequências)
+-- Copie este bloco inteiro e execute no SQL Editor do Supabase
+
+SELECT setval(pg_get_serial_sequence('public.vendas', 'id'), COALESCE(MAX(id), 0) + 1, false) FROM public.vendas;
+SELECT setval(pg_get_serial_sequence('public.venda_itens', 'id'), COALESCE(MAX(id), 0) + 1, false) FROM public.venda_itens;
+SELECT setval(pg_get_serial_sequence('public.transactions', 'id'), COALESCE(MAX(id), 0) + 1, false) FROM public.transactions;
+SELECT setval(pg_get_serial_sequence('public.bank_accounts', 'id'), COALESCE(MAX(id), 0) + 1, false) FROM public.bank_accounts;
+SELECT setval(pg_get_serial_sequence('public.payment_methods', 'id'), COALESCE(MAX(id), 0) + 1, false) FROM public.payment_methods;
+SELECT setval(pg_get_serial_sequence('public.store_settings', 'id'), COALESCE(MAX(id), 0) + 1, false) FROM public.store_settings;
+
+-- Correção dos Códigos de Venda/Condicional (V0001, C0001...)
+SELECT setval('public.sales_seq', COALESCE((SELECT MAX(NULLIF(regexp_replace(code, '\\D', '', 'g'), '')::int) FROM public.vendas WHERE code LIKE 'V%'), 0) + 1, false);
+SELECT setval('public.quotes_seq', COALESCE((SELECT MAX(NULLIF(regexp_replace(code, '\\D', '', 'g'), '')::int) FROM public.vendas WHERE code LIKE 'C%'), 0) + 1, false);
+SELECT setval('public.losses_seq', COALESCE((SELECT MAX(NULLIF(regexp_replace(code, '\\D', '', 'g'), '')::int) FROM public.vendas WHERE code LIKE 'B%'), 0) + 1, false);
 `;
 
 export const migrations: Migration[] = [

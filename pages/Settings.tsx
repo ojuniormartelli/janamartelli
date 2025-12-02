@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase, resetDatabaseConfig, isUsingEnv } from '../supabaseClient';
-import { migrations } from '../utils/database.sql';
+import { migrations, fixSequencesSQL } from '../utils/database.sql';
 import { Profile, PaymentMethod } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { 
@@ -29,7 +28,8 @@ import {
   CreditCard,
   Percent,
   Layers,
-  FileJson
+  FileJson,
+  Wrench
 } from 'lucide-react';
 
 export const Settings: React.FC = () => {
@@ -760,6 +760,26 @@ export const Settings: React.FC = () => {
                         </div>
                       </>
                   )}
+              </div>
+
+              {/* Maintenance Section - MOVED UP */}
+              <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-6">
+                 <h3 className="text-lg font-bold dark:text-white flex items-center mb-4"><Wrench className="mr-2" size={20}/> Manutenção</h3>
+                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-50 dark:bg-slate-900/30 p-4 rounded-lg">
+                    <div>
+                        <h4 className="font-bold text-slate-800 dark:text-white">Corrigir IDs Duplicados</h4>
+                        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                            Use isto se receber o erro "duplicate key value" ao criar vendas ou clientes. Isso realinha os contadores do banco.
+                        </p>
+                    </div>
+                    <button 
+                        onClick={() => copyScript(fixSequencesSQL, 'fix_seq')}
+                        className={`flex items-center px-4 py-2 rounded font-bold text-sm transition-colors ${copied === 'fix_seq' ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-slate-700 dark:text-white'}`}
+                    >
+                        {copied === 'fix_seq' ? <Check size={16} className="mr-2"/> : <Copy size={16} className="mr-2"/>}
+                        {copied === 'fix_seq' ? 'Copiado!' : 'Copiar SQL de Correção'}
+                    </button>
+                 </div>
               </div>
 
               {/* Migrations Section */}
