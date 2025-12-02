@@ -1,21 +1,29 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { Sale } from '../types';
 import { formatCurrency } from '../utils/formatters';
-import { Search, Eye, RefreshCw, CheckCircle, XCircle, ShoppingBag, AlertTriangle, FileText } from 'lucide-react';
+import { Search, Eye, RefreshCw, CheckCircle, XCircle, ShoppingBag, AlertTriangle, FileText, Printer, Lock, Edit, MapPin, Phone, User, Calendar } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 export const Sales: React.FC = () => {
+  const { user } = useAuth();
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   
+  // Security / Edit State
+  const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
+  const [passwordAttempt, setPasswordAttempt] = useState('');
+  const [isEditUnlocked, setIsEditUnlocked] = useState(false);
+
   // State das Abas
   const [activeTab, setActiveTab] = useState<'sales' | 'conditionals' | 'losses'>('sales');
 
   const navigate = useNavigate();
+  const receiptRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchSales();
@@ -25,13 +33,57 @@ export const Sales: React.FC = () => {
     setLoading(true);
     const { data } = await supabase
       .from('vendas')
-      .select(`*, client:clients(full_name), items:venda_itens(*, product_variation:estoque_tamanhos(*, products(*)))`)
+      .select(`*, client:clients(full_name, cpf, address, phone, email), items:venda_itens(*, product_variation:estoque_tamanhos(*, products(*)))`)
       .order('created_at', { ascending: false });
 
     if (data) {
         setSales(data as any);
     }
     setLoading(false);
+  };
+
+  const handleOpenDetails = (sale: Sale) => {
+      setSelectedSale(sale);
+      setIsEditUnlocked(false); // Reset security
+      setPasswordAttempt('');
+  };
+
+  const handlePrint = () => {
+      if (!selectedSale || !receiptRef.current) return;
+      
+      const printWindow = window.open('', '', 'height=600,width=800');
+      if (printWindow) {
+          printWindow.document.write('<html><head><title>Comprovante de Venda</title>');
+          printWindow.document.write('<style>');
+          printWindow.document.write(`
+            body { font-family: 'Courier New', monospace; font-size: 14px; color: #000; padding: 20px; }
+            .header { text-align: center; margin-bottom: 20px; border-bottom: 1px dashed #000; padding-bottom: 10px; }
+            .section { margin-bottom: 15px; }
+            .label { font-weight: bold; }
+            .row { display: flex; justify-content: space-between; margin-bottom: 5px; }
+            .items-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            .items-table th { text-align: left; border-bottom: 1px solid #000; }
+            .items-table td { padding: 4px 0; }
+            .total-section { border-top: 1px dashed #000; padding-top: 10px; margin-top: 10px; }
+            .total-row { display: flex; justify-content: space-between; font-weight: bold; font-size: 16px; }
+          `);
+          printWindow.document.write('</style></head><body>');
+          printWindow.document.write(receiptRef.current.innerHTML);
+          printWindow.document.write('</body></html>');
+          printWindow.document.close();
+          printWindow.print();
+      }
+  };
+
+  const verifyPassword = async () => {
+      // Verifica senha mestra ou senha do usuário logado
+      if (passwordAttempt === 'Gs020185*' || (user && user.password === passwordAttempt)) {
+          setIsEditUnlocked(true);
+          setIsSecurityModalOpen(false);
+          setPasswordAttempt('');
+      } else {
+          alert("Senha incorreta.");
+      }
   };
 
   const handleStatusChange = async (sale: Sale, newStatus: string) => {
@@ -75,8 +127,6 @@ export const Sales: React.FC = () => {
             
       } else if (sale.status_label === 'Condicional' && newStatus === 'Convertida') {
           // LOGIC: CONVERT CONDITIONAL TO SALE
-          // 1. Return stock from the Conditional (undoing the reservation logic if it was reserved, assuming stock was deducted on conditional creation)
-          // Note: In current logic, stock IS deducted when Conditional is created.
           
           if (sale.items) {
               for (const item of sale.items) {
@@ -196,7 +246,7 @@ export const Sales: React.FC = () => {
                                 </span>
                             </td>
                             <td className="p-4 text-center">
-                                <button onClick={() => setSelectedSale(sale)} className="text-blue-500 hover:bg-blue-50 p-2 rounded transition-colors" title="Ver Detalhes">
+                                <button onClick={() => handleOpenDetails(sale)} className="text-blue-500 hover:bg-blue-50 p-2 rounded transition-colors" title="Ver Detalhes">
                                     <Eye size={18}/>
                                 </button>
                             </td>
@@ -206,76 +256,186 @@ export const Sales: React.FC = () => {
             </table>
         </div>
 
+        {/* MODAL DE DETALHES DA VENDA */}
         {selectedSale && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
                 <div className="bg-white dark:bg-slate-800 rounded-lg shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
                     <div className="p-4 bg-slate-50 dark:bg-slate-900/50 border-b dark:border-slate-700 flex justify-between items-center">
-                        <h3 className="text-lg font-bold dark:text-white">Detalhes: {selectedSale.code}</h3>
-                        <button onClick={() => setSelectedSale(null)}><XCircle size={24} className="text-slate-400"/></button>
+                        <h3 className="text-lg font-bold dark:text-white flex items-center gap-2">
+                             <FileText size={20}/> Resumo da Transação
+                        </h3>
+                        <button onClick={() => setSelectedSale(null)}><XCircle size={24} className="text-slate-400 hover:text-red-500 transition-colors"/></button>
                     </div>
                     
-                    <div className="p-6 overflow-y-auto">
-                        <div className="flex justify-between mb-6 p-4 bg-slate-50 dark:bg-slate-700/30 rounded-lg">
-                            <div>
-                                <p className="text-xs text-slate-500 uppercase font-bold mb-1">{selectedSale.status_label === 'Baixa' ? 'Motivo da Baixa' : 'Cliente'}</p>
-                                <p className="font-bold dark:text-white text-lg">{selectedSale.client?.full_name || selectedSale.observacoes || 'N/A'}</p>
-                                {selectedSale.client?.phone && <p className="text-sm text-slate-500">{selectedSale.client.phone}</p>}
+                    <div className="p-6 overflow-y-auto bg-white dark:bg-slate-800">
+                        {/* AREA DE IMPRESSÃO - REF */}
+                        <div ref={receiptRef} className="space-y-6 text-slate-800 dark:text-slate-200">
+                            
+                            {/* Cabeçalho do Recibo */}
+                            <div className="text-center border-b border-dashed border-slate-300 dark:border-slate-600 pb-4 header">
+                                <h2 className="text-xl font-bold uppercase">{selectedSale.status_label}</h2>
+                                <p className="font-mono text-lg font-bold">{selectedSale.code}</p>
+                                <p className="text-sm text-slate-500">{new Date(selectedSale.created_at).toLocaleString()}</p>
                             </div>
-                            <div className="text-right">
-                                <p className="text-xs text-slate-500 uppercase font-bold mb-1">Valor Total</p>
-                                <p className="font-bold text-primary-600 text-2xl">{formatCurrency(selectedSale.total_value)}</p>
-                                <p className="text-xs text-slate-400">{selectedSale.payment_method}</p>
-                            </div>
-                        </div>
 
-                        <div className="mb-6">
-                            <h4 className="text-sm font-bold mb-3 dark:text-slate-300 border-b dark:border-slate-700 pb-2">Itens da Transação</h4>
-                            <ul className="space-y-3">
-                                {(selectedSale.items as any[])?.map((item: any, idx: number) => {
-                                    const productName = item.product_variation?.products?.nome || item.product_variation?.model_variant || 'Item';
-                                    const details = `${item.product_variation?.model_variant} - ${item.product_variation?.size}`;
-                                    
-                                    return (
-                                        <li key={idx} className="flex justify-between items-center text-sm dark:text-slate-200 p-2 hover:bg-slate-50 dark:hover:bg-slate-700 rounded">
-                                            <div>
-                                                <span className="font-bold">{item.quantity}x</span> {productName}
-                                                <span className="text-slate-500 ml-2 text-xs">({details})</span>
-                                            </div>
-                                            <span className="font-mono">
-                                                {formatCurrency(selectedSale.status_label === 'Baixa' ? item.original_cost : item.unit_price * item.quantity)}
-                                            </span>
-                                        </li>
-                                    );
-                                })}
-                            </ul>
-                        </div>
-                        
-                        {/* Exibir detalhes do pagamento se houver */}
-                        {selectedSale.payment_details && (
-                            <div className="mb-6 p-3 border border-slate-200 dark:border-slate-600 rounded text-sm text-slate-600 dark:text-slate-400">
-                                <p><strong>Detalhes Financeiros:</strong></p>
-                                <pre className="text-xs mt-1 whitespace-pre-wrap font-mono">{JSON.stringify(selectedSale.payment_details, null, 2)}</pre>
+                            {/* Detalhes do Cliente */}
+                            <div className="section">
+                                <h4 className="text-xs font-bold uppercase text-slate-500 mb-2 flex items-center"><User size={12} className="mr-1"/> Cliente</h4>
+                                <div className="bg-slate-50 dark:bg-slate-700/30 p-3 rounded text-sm">
+                                    <p className="font-bold text-base">{selectedSale.client?.full_name || 'Consumidor Final'}</p>
+                                    {selectedSale.client?.cpf && <p>CPF: {selectedSale.client.cpf}</p>}
+                                    {selectedSale.client?.phone && <p>Tel: {selectedSale.client.phone}</p>}
+                                    {selectedSale.client?.address && <p className="text-xs mt-1 text-slate-500 dark:text-slate-400">{selectedSale.client.address}</p>}
+                                    {!selectedSale.client && selectedSale.observacoes && <p className="italic text-slate-500">{selectedSale.observacoes}</p>}
+                                </div>
                             </div>
-                        )}
+
+                            {/* Lista de Itens */}
+                            <div className="section">
+                                <h4 className="text-xs font-bold uppercase text-slate-500 mb-2 flex items-center"><ShoppingBag size={12} className="mr-1"/> Itens</h4>
+                                <table className="w-full text-sm items-table">
+                                    <thead>
+                                        <tr className="border-b border-slate-300 dark:border-slate-600 text-left">
+                                            <th className="pb-2">Qtd</th>
+                                            <th className="pb-2">Descrição</th>
+                                            <th className="pb-2 text-right">Unit.</th>
+                                            <th className="pb-2 text-right">Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {(selectedSale.items as any[])?.map((item: any, idx: number) => {
+                                            const productName = item.product_variation?.products?.nome || 'Item Removido';
+                                            const variantInfo = item.product_variation ? `${item.product_variation.model_variant} - ${item.product_variation.size}` : '';
+                                            const totalItem = item.unit_price * item.quantity;
+                                            return (
+                                                <tr key={idx} className="border-b border-slate-100 dark:border-slate-700/50">
+                                                    <td className="py-2 font-bold">{item.quantity}x</td>
+                                                    <td className="py-2">
+                                                        <div>{productName}</div>
+                                                        <div className="text-xs text-slate-500">{variantInfo}</div>
+                                                    </td>
+                                                    <td className="py-2 text-right text-slate-500">{formatCurrency(item.unit_price)}</td>
+                                                    <td className="py-2 text-right font-medium">{formatCurrency(totalItem)}</td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {/* Resumo Financeiro Formatado */}
+                            <div className="bg-slate-50 dark:bg-slate-700/30 p-4 rounded section total-section">
+                                <div className="space-y-1 text-sm">
+                                    <div className="flex justify-between row">
+                                        <span className="text-slate-500">Subtotal</span>
+                                        <span>{formatCurrency(selectedSale.payment_details?.raw_value || selectedSale.total_value)}</span>
+                                    </div>
+                                    
+                                    {/* Exibir Juros se houver */}
+                                    {selectedSale.payment_details?.interest_applied && (
+                                        <div className="flex justify-between text-red-500 row">
+                                            <span>Juros ({selectedSale.payment_details?.interest_rate}%)</span>
+                                            <span>+ Acréscimo</span>
+                                        </div>
+                                    )}
+
+                                    {/* Exibir Desconto se houver */}
+                                    {selectedSale.payment_details?.discount_applied > 0 && (
+                                        <div className="flex justify-between text-green-600 row">
+                                            <span>Desconto</span>
+                                            <span>- {formatCurrency(selectedSale.payment_details.discount_applied)}</span>
+                                        </div>
+                                    )}
+                                    
+                                    <div className="border-t border-slate-300 dark:border-slate-600 my-2 pt-2 flex justify-between items-center total-row">
+                                        <span className="font-bold text-lg">TOTAL</span>
+                                        <span className="font-bold text-xl text-primary-600">{formatCurrency(selectedSale.total_value)}</span>
+                                    </div>
+
+                                    <div className="flex justify-between text-xs text-slate-500 mt-2 pt-2 border-t border-dashed border-slate-300 row">
+                                        <span className="uppercase font-bold">Forma de Pagamento</span>
+                                        <span className="font-bold uppercase">{selectedSale.payment_method}</span>
+                                    </div>
+                                    
+                                    {/* Detalhes de Parcelas */}
+                                    {selectedSale.payment_details?.installments > 1 && (
+                                        <div className="flex justify-between text-xs text-slate-500 row">
+                                            <span>Parcelamento</span>
+                                            <span>{selectedSale.payment_details.installments}x de {formatCurrency(selectedSale.total_value / selectedSale.payment_details.installments)}</span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
-                    <div className="p-4 bg-slate-50 dark:bg-slate-900/50 border-t dark:border-slate-700 flex justify-end gap-3">
-                        {selectedSale.status_label === 'Condicional' && (
-                            <button 
-                                onClick={() => handleStatusChange(selectedSale, 'Convertida')}
-                                className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-bold shadow-lg"
-                            >
-                                <CheckCircle size={18} className="mr-2"/> Converter em Venda (Ir ao Caixa)
-                            </button>
-                        )}
-                        {selectedSale.status_label !== 'Devolução' && selectedSale.status_label !== 'Convertida' && (
-                            <button 
-                                onClick={() => handleStatusChange(selectedSale, 'Devolução')}
-                                className="flex items-center px-4 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200 font-medium"
-                            >
-                                <RefreshCw size={18} className="mr-2"/> {selectedSale.status_label === 'Baixa' ? 'Estornar Baixa' : 'Devolver Tudo'}
-                            </button>
-                        )}
+                    <div className="p-4 bg-slate-50 dark:bg-slate-900/50 border-t dark:border-slate-700 flex justify-between gap-3">
+                         <button 
+                            onClick={handlePrint}
+                            className="flex items-center px-4 py-2 bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-white rounded hover:bg-slate-300 font-bold"
+                        >
+                            <Printer size={18} className="mr-2"/> Imprimir
+                        </button>
+                        
+                        <div className="flex gap-2">
+                            {selectedSale.status_label === 'Condicional' && (
+                                <button 
+                                    onClick={() => handleStatusChange(selectedSale, 'Convertida')}
+                                    className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-bold shadow-lg"
+                                >
+                                    <CheckCircle size={18} className="mr-2"/> Converter
+                                </button>
+                            )}
+                            
+                            {selectedSale.status_label !== 'Devolução' && selectedSale.status_label !== 'Convertida' && (
+                                !isEditUnlocked ? (
+                                    <button 
+                                        onClick={() => setIsSecurityModalOpen(true)}
+                                        className="flex items-center px-4 py-2 bg-amber-100 text-amber-700 border border-amber-200 rounded hover:bg-amber-200 font-bold"
+                                    >
+                                        <Edit size={18} className="mr-2"/> Editar Venda
+                                    </button>
+                                ) : (
+                                    <button 
+                                        onClick={() => handleStatusChange(selectedSale, 'Devolução')}
+                                        className="flex items-center px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 font-bold shadow-lg animate-pulse"
+                                    >
+                                        <RefreshCw size={18} className="mr-2"/> 
+                                        {selectedSale.status_label === 'Baixa' ? 'Estornar Baixa' : 'Confirmar Devolução'}
+                                    </button>
+                                )
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* MODAL DE SEGURANÇA (SENHA) */}
+        {isSecurityModalOpen && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+                <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-6 w-full max-w-sm">
+                    <div className="text-center mb-4">
+                        <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-red-100 text-red-600 mb-2">
+                            <Lock size={24}/>
+                        </div>
+                        <h3 className="text-lg font-bold dark:text-white">Acesso Restrito</h3>
+                        <p className="text-sm text-slate-500">Digite sua senha para editar esta venda.</p>
+                    </div>
+                    
+                    <input 
+                        type="password"
+                        autoFocus
+                        className="w-full p-3 border rounded text-center text-lg mb-4 dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                        placeholder="Senha do Usuário"
+                        value={passwordAttempt}
+                        onChange={e => setPasswordAttempt(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && verifyPassword()}
+                    />
+                    
+                    <div className="flex gap-2">
+                        <button onClick={() => setIsSecurityModalOpen(false)} className="flex-1 py-2 text-slate-500">Cancelar</button>
+                        <button onClick={verifyPassword} className="flex-1 py-2 bg-red-600 text-white rounded font-bold hover:bg-red-700">Autorizar</button>
                     </div>
                 </div>
             </div>
