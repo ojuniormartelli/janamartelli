@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { Product, CartItem, Client, ProductVariation, PaymentMethod } from '../types';
-import { Search, ShoppingBag, Trash, UserPlus, CheckCircle, X, Save, User, Mail, MapPin, AlertCircle, Tag, TrendingDown, DollarSign, Percent } from 'lucide-react';
+import { Search, ShoppingBag, Trash, UserPlus, CheckCircle, X, Save, User, Mail, MapPin, AlertCircle, Tag, TrendingDown, DollarSign, Percent, ScanBarcode } from 'lucide-react';
 import { formatCurrency, maskCPF, maskPhone, getLocalDate } from '../utils/formatters';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -47,9 +47,86 @@ export const POS: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
+  // Barcode Buffer
+  const barcodeBuffer = useRef('');
+  const lastKeyTime = useRef(0);
+
   useEffect(() => {
     loadData();
   }, []);
+
+  // --- BARCODE SCANNER LISTENER ---
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+        // Se estiver digitando em um input (exceto se implementarmos lógica especifica), ignoramos o buffer global
+        // para evitar duplicidade ou interferência na digitação manual.
+        // O input de busca tem seu próprio handler 'onKeyDown'.
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+
+        // Ignora se modais estiverem abertos
+        if (isPaymentModalOpen || isNewClientModalOpen || discountItemIndex !== null) return;
+
+        const currentTime = Date.now();
+        const timeDiff = currentTime - lastKeyTime.current;
+        lastKeyTime.current = currentTime;
+
+        // Se for Enter, processa o buffer
+        if (e.key === 'Enter') {
+            if (barcodeBuffer.current.length > 0) {
+                processBarcode(barcodeBuffer.current);
+                barcodeBuffer.current = '';
+            }
+            return;
+        }
+
+        // Limpa buffer se demorar muito entre teclas (digitação manual vs scanner)
+        // Scanners geralmente enviam caracteres em < 50ms
+        if (timeDiff > 100) {
+            barcodeBuffer.current = '';
+        }
+
+        // Adiciona caracteres imprimíveis
+        if (e.key.length === 1) {
+            barcodeBuffer.current += e.key;
+        }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [products, isPaymentModalOpen, isNewClientModalOpen, discountItemIndex]); // Recria o listener se produtos mudarem para ter acesso ao state atualizado
+
+
+  const processBarcode = (sku: string) => {
+      if (!sku) return;
+      const cleanSku = sku.trim().toUpperCase();
+
+      // Procura produto pelo SKU
+      let foundProduct: Product | undefined;
+      let foundVariation: ProductVariation | undefined;
+
+      // Iterar produtos e variações
+      for (const p of products) {
+          const v = p.variations?.find(variation => variation.sku && variation.sku.toUpperCase() === cleanSku);
+          if (v) {
+              foundProduct = p;
+              foundVariation = v;
+              break;
+          }
+      }
+
+      if (foundProduct && foundVariation) {
+          addToCart(foundProduct, foundVariation);
+          // Feedback visual ou sonoro pode ser adicionado aqui
+          // Limpa a busca se ela tiver capturado o SKU
+          if (search.toUpperCase() === cleanSku) {
+              setSearch('');
+          }
+      } else {
+          // Opcional: Mostrar Toast de erro
+          // alert(`Produto com SKU ${sku} não encontrado.`);
+      }
+  };
 
   const loadData = async () => {
     const { data: prodData } = await supabase.from('products').select('*').eq('active', true);
@@ -322,14 +399,26 @@ export const POS: React.FC = () => {
       {/* Product Catalog */}
       <div className="flex-1 flex flex-col bg-white dark:bg-slate-800 rounded-lg shadow overflow-hidden">
         <div className="p-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-            <input 
-              className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 dark:text-white"
-              placeholder="Buscar por nome, modelo, sku..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
+          <div className="relative flex items-center gap-2">
+            <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+                <input 
+                className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 dark:text-white"
+                placeholder="Buscar por nome ou bipar código (SKU)..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                onKeyDown={(e) => {
+                    // Se apertar Enter na busca, tenta processar como código de barras também
+                    if (e.key === 'Enter') {
+                        processBarcode(search);
+                    }
+                }}
+                autoFocus
+                />
+            </div>
+            <div className="p-2 bg-slate-200 dark:bg-slate-700 rounded text-slate-500 dark:text-slate-400" title="Leitor de Código de Barras Ativo">
+                <ScanBarcode size={20} />
+            </div>
           </div>
         </div>
         
