@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { Product, CartItem, Client, ProductVariation, PaymentMethod } from '../types';
-import { Search, ShoppingBag, Trash, UserPlus, CheckCircle, X, Save, User, Mail, MapPin, AlertCircle, Tag, TrendingDown, DollarSign, Percent, ScanBarcode, Clock } from 'lucide-react';
+import { Search, ShoppingBag, Trash, UserPlus, CheckCircle, X, Save, User, Mail, MapPin, AlertCircle, Tag, TrendingDown, DollarSign, Percent, ScanBarcode, Clock, CreditCard } from 'lucide-react';
 import { formatCurrency, maskCPF, maskPhone, getLocalDate } from '../utils/formatters';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -30,7 +30,7 @@ export const POS: React.FC = () => {
   const [interestRate, setInterestRate] = useState(0);
   const [applyInterest, setApplyInterest] = useState(true);
   
-  // Pending Sale State
+  // Pending Sale State (Fiado)
   const [isPendingSale, setIsPendingSale] = useState(false);
   
   // Discount States
@@ -61,11 +61,15 @@ export const POS: React.FC = () => {
   // --- BARCODE SCANNER LISTENER ---
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
-        // Se estiver digitando em um input (exceto se implementarmos lógica especifica), ignoramos o buffer global
-        // para evitar duplicidade ou interferência na digitação manual.
-        // O input de busca tem seu próprio handler 'onKeyDown'.
+        // Se estiver digitando em um input (exceto o de busca que tratamos separado, ou se não estiver focado), 
+        // a lógica de buffer pode precisar de ajuste. Aqui assumimos que scanner funciona como teclado rápido.
+        
         const target = e.target as HTMLElement;
-        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+        // Se o foco estiver no input de busca, deixamos ele lidar com o Enter, mas capturamos se não estiver focado em inputs de texto
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+             // Se for o input de busca, ok, ele tem o onKeyDown próprio.
+             return; 
+        }
 
         // Ignora se modais estiverem abertos
         if (isPaymentModalOpen || isNewClientModalOpen || discountItemIndex !== null) return;
@@ -89,7 +93,7 @@ export const POS: React.FC = () => {
             barcodeBuffer.current = '';
         }
 
-        // Adiciona caracteres imprimíveis
+        // Adiciona caracteres imprimíveis (números/letras)
         if (e.key.length === 1) {
             barcodeBuffer.current += e.key;
         }
@@ -97,7 +101,7 @@ export const POS: React.FC = () => {
 
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [products, isPaymentModalOpen, isNewClientModalOpen, discountItemIndex]); // Recria o listener se produtos mudarem para ter acesso ao state atualizado
+  }, [products, isPaymentModalOpen, isNewClientModalOpen, discountItemIndex]);
 
 
   const processBarcode = (sku: string) => {
@@ -120,14 +124,13 @@ export const POS: React.FC = () => {
 
       if (foundProduct && foundVariation) {
           addToCart(foundProduct, foundVariation);
-          // Feedback visual ou sonoro pode ser adicionado aqui
-          // Limpa a busca se ela tiver capturado o SKU
+          // Feedback visual: limpar busca se o SKU veio de lá
           if (search.toUpperCase() === cleanSku) {
               setSearch('');
           }
       } else {
-          // Opcional: Mostrar Toast de erro
-          // alert(`Produto com SKU ${sku} não encontrado.`);
+          // Opcional: Toast de erro
+          console.log(`Produto com SKU ${sku} não encontrado.`);
       }
   };
 
@@ -165,21 +168,14 @@ export const POS: React.FC = () => {
 
   // --- HANDLE CONVERSION FROM SALES PAGE ---
   useEffect(() => {
-      // Logic runs immediately if state is present, doesn't wait for products
-      // We assume the data passed in state is sufficient to rebuild the cart
       if (location.state?.conversionSale) {
           const sale = location.state.conversionSale;
-          
-          if (sale.client_id) {
-              setSelectedClient(sale.client_id);
-          }
-
+          if (sale.client_id) setSelectedClient(sale.client_id);
           if (sale.items) {
               const convertedCart: CartItem[] = [];
               sale.items.forEach((item: any) => {
                   const variation = item.product_variation;
                   const product = variation?.products; 
-                  
                   if (variation && product) {
                       convertedCart.push({
                           product: product,
@@ -191,7 +187,6 @@ export const POS: React.FC = () => {
               });
               setCart(convertedCart);
           }
-          // Clean state to avoid re-triggering
           navigate(location.pathname, { replace: true, state: {} });
       }
   }, [location.state, navigate]);
@@ -238,18 +233,16 @@ export const POS: React.FC = () => {
 
   const rawTotal = cart.reduce((acc, item) => acc + (item.customPrice || item.variation.price_sale) * item.quantity, 0);
   
-  // Logic for final calculation
   const discountInput = parseFloat(discountVal.replace(',', '.')) || 0;
   
-  // Only apply interest if it's Credit AND toggle is on
   const selectedMethod = paymentMethods.find(m => m.id === selectedMethodId);
   const isCredit = selectedMethod?.type === 'credit';
   
+  // Juros não se aplicam se for venda pendente (fiado)
   const subTotalWithInterest = (isCredit && applyInterest && !isPendingSale)
     ? rawTotal * (1 + (interestRate / 100)) 
     : rawTotal;
   
-  // Calculate discount amount based on type
   const calculatedDiscountValue = discountType === 'percent' 
     ? subTotalWithInterest * (discountInput / 100)
     : discountInput;
@@ -262,9 +255,9 @@ export const POS: React.FC = () => {
           return;
       }
       setTransactionType(type);
-      setDiscountVal(''); // Reset discount
+      setDiscountVal('');
       setDiscountType('money');
-      setIsPendingSale(false); // Default to immediate payment
+      setIsPendingSale(false); // Reset pendente
       setIsPaymentModalOpen(true);
       if (paymentMethods.length > 0) handleMethodSelect(paymentMethods[0].id);
   };
@@ -297,12 +290,12 @@ export const POS: React.FC = () => {
     const method = paymentMethods.find(m => m.id === selectedMethodId);
     const isCreditPayment = method?.type === 'credit';
 
-    // Status Determination
+    // Determina Status e Método
     const finalPaymentStatus = transactionType === 'sale' 
         ? (isPendingSale ? 'pending' : 'paid') 
-        : 'pending'; // Quotes are always pending until converted
+        : 'pending'; // Condicionais sempre pending
 
-    const finalPaymentMethodName = isPendingSale 
+    const finalMethodName = isPendingSale 
         ? 'A Receber' 
         : (method ? method.name : 'Outros');
 
@@ -310,9 +303,9 @@ export const POS: React.FC = () => {
     const { data: sale, error } = await supabase.from('vendas').insert({
         code: code, 
         client_id: selectedClient,
-        user_id: user?.id || '00000000-0000-0000-0000-000000000000', // Use Context User
+        user_id: user?.id || '00000000-0000-0000-0000-000000000000',
         total_value: finalTotal,
-        payment_method: finalPaymentMethodName,
+        payment_method: finalMethodName,
         payment_status: finalPaymentStatus,
         status_label: transactionType === 'sale' ? 'Venda' : 'Condicional',
         payment_details: { 
@@ -373,9 +366,9 @@ export const POS: React.FC = () => {
     }
 
     const msg = isPendingSale 
-        ? `Venda ${code} salva como PENDENTE (Fiado). Estoque atualizado.` 
+        ? `Venda ${code} registrada como PENDENTE (Fiado). Estoque atualizado.` 
         : `${transactionType === 'sale' ? 'Venda' : 'Condicional'} ${code} realizada com sucesso!`;
-        
+
     alert(msg);
     
     // Clear State
@@ -383,7 +376,6 @@ export const POS: React.FC = () => {
     setIsPaymentModalOpen(false);
     setSelectedClient('');
     
-    // Clear history state to prevent cart reloading on refresh
     window.history.replaceState({}, document.title);
     navigate(location.pathname, { replace: true, state: {} });
     loadData();
@@ -425,10 +417,7 @@ export const POS: React.FC = () => {
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 onKeyDown={(e) => {
-                    // Se apertar Enter na busca, tenta processar como código de barras também
-                    if (e.key === 'Enter') {
-                        processBarcode(search);
-                    }
+                    if (e.key === 'Enter') processBarcode(search);
                 }}
                 autoFocus
                 />
@@ -619,12 +608,12 @@ export const POS: React.FC = () => {
                 
                 {transactionType === 'sale' && (
                     <div className="mb-4">
-                        {/* PENDING TOGGLE */}
+                         {/* TOGGLE VENDA PENDENTE / FIADO */}
                         <div 
                             className={`flex items-center p-3 rounded-lg border cursor-pointer mb-4 transition-colors ${isPendingSale ? 'bg-amber-50 border-amber-300' : 'bg-slate-50 border-slate-200 dark:bg-slate-700 dark:border-slate-600'}`}
                             onClick={() => setIsPendingSale(!isPendingSale)}
                         >
-                            <div className={`w-5 h-5 rounded border flex items-center justify-center mr-3 ${isPendingSale ? 'bg-amber-500 border-amber-500 text-white' : 'bg-white border-slate-300'}`}>
+                            <div className={`w-5 h-5 rounded border flex items-center justify-center mr-3 transition-colors ${isPendingSale ? 'bg-amber-500 border-amber-500 text-white' : 'bg-white border-slate-300'}`}>
                                 {isPendingSale && <CheckCircle size={14} />}
                             </div>
                             <div className="flex-1">
@@ -755,7 +744,7 @@ export const POS: React.FC = () => {
                         {installments > 1 && applyInterest && isCredit && !isPendingSale && (
                             <p className="text-sm text-primary-600 mt-1">{installments}x de {formatCurrency(finalTotal/installments)}</p>
                         )}
-                         {isPendingSale && (
+                        {isPendingSale && (
                             <p className="text-xs text-amber-600 font-bold mt-2 uppercase bg-amber-50 inline-block px-2 py-1 rounded">Pagamento Pendente</p>
                         )}
                     </div>
@@ -763,7 +752,10 @@ export const POS: React.FC = () => {
 
                 <div className="flex gap-3">
                     <button onClick={() => setIsPaymentModalOpen(false)} className="flex-1 py-3 text-slate-600 dark:text-slate-300 font-medium border rounded-lg hover:bg-slate-50">Cancelar</button>
-                    <button onClick={finalizeTransaction} className={`flex-1 py-3 text-white rounded-lg font-bold shadow-lg ${isPendingSale ? 'bg-amber-500 hover:bg-amber-600' : 'bg-primary-600 hover:bg-primary-700'}`}>
+                    <button 
+                        onClick={finalizeTransaction} 
+                        className={`flex-1 py-3 text-white rounded-lg font-bold shadow-lg ${isPendingSale ? 'bg-amber-500 hover:bg-amber-600' : 'bg-primary-600 hover:bg-primary-700'}`}
+                    >
                         {isPendingSale ? 'Salvar como Pendente' : 'Confirmar'}
                     </button>
                 </div>
