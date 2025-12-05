@@ -1,9 +1,9 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../supabaseClient';
-import { Sale } from '../types';
-import { formatCurrency } from '../utils/formatters';
-import { Search, Eye, RefreshCw, CheckCircle, XCircle, ShoppingBag, AlertTriangle, FileText, Printer, Lock, Edit, MapPin, Phone, User, Calendar } from 'lucide-react';
+import { Sale, PaymentMethod } from '../types';
+import { formatCurrency, getLocalDate } from '../utils/formatters';
+import { Search, Eye, RefreshCw, CheckCircle, XCircle, ShoppingBag, AlertTriangle, FileText, Printer, Lock, Edit, MapPin, Phone, User, Calendar, DollarSign, Wallet } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -19,6 +19,11 @@ export const Sales: React.FC = () => {
   const [passwordAttempt, setPasswordAttempt] = useState('');
   const [isEditUnlocked, setIsEditUnlocked] = useState(false);
 
+  // Settle Payment State (Receber Venda Pendente)
+  const [isSettleModalOpen, setIsSettleModalOpen] = useState(false);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [settleMethodId, setSettleMethodId] = useState<number | null>(null);
+
   // State das Abas
   const [activeTab, setActiveTab] = useState<'sales' | 'conditionals' | 'losses'>('sales');
 
@@ -27,6 +32,7 @@ export const Sales: React.FC = () => {
 
   useEffect(() => {
     fetchSales();
+    fetchPaymentMethods();
   }, []);
 
   const fetchSales = async () => {
@@ -40,6 +46,11 @@ export const Sales: React.FC = () => {
         setSales(data as any);
     }
     setLoading(false);
+  };
+
+  const fetchPaymentMethods = async () => {
+      const { data } = await supabase.from('payment_methods').select('*').eq('active', true);
+      if (data) setPaymentMethods(data);
   };
 
   const handleOpenDetails = (sale: Sale) => {
@@ -84,6 +95,53 @@ export const Sales: React.FC = () => {
       } else {
           alert("Senha incorreta.");
       }
+  };
+
+  const handleOpenSettleModal = () => {
+      if (!selectedSale) return;
+      setIsSettleModalOpen(true);
+      if (paymentMethods.length > 0) setSettleMethodId(paymentMethods[0].id);
+  };
+
+  const confirmSettlePayment = async () => {
+      if (!selectedSale || !settleMethodId) return;
+      const method = paymentMethods.find(m => m.id === settleMethodId);
+      if (!method) return;
+
+      // 1. Update Sale
+      const { error } = await supabase.from('vendas').update({
+          payment_status: 'paid',
+          payment_method: method.name
+      }).eq('id', selectedSale.id);
+
+      if (error) {
+          alert("Erro ao atualizar venda.");
+          return;
+      }
+
+      // 2. Insert Transaction (Entrada Financeira)
+      const { data: defaultAccount } = await supabase.from('bank_accounts').select('*').eq('is_default', true).single();
+      const accountId = defaultAccount ? defaultAccount.id : (await supabase.from('bank_accounts').select('id').limit(1).single()).data?.id;
+
+      if (accountId) {
+            await supabase.from('transactions').insert({
+                description: `Recebimento ${selectedSale.code} - ${method.name}`,
+                amount: selectedSale.total_value,
+                type: 'income',
+                account_id: accountId,
+                category: 'Vendas',
+                date: getLocalDate()
+            });
+            // Update balance
+            if (defaultAccount) {
+                await supabase.from('bank_accounts').update({ balance: defaultAccount.balance + selectedSale.total_value }).eq('id', accountId);
+            }
+      }
+
+      alert("Pagamento confirmado com sucesso!");
+      setIsSettleModalOpen(false);
+      setSelectedSale(null);
+      fetchSales();
   };
 
   const handleStatusChange = async (sale: Sale, newStatus: string) => {
@@ -235,15 +293,21 @@ export const Sales: React.FC = () => {
                             </td>
                             <td className="p-4 font-bold text-slate-800 dark:text-white">{formatCurrency(sale.total_value)}</td>
                             <td className="p-4">
-                                <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${
-                                    sale.status_label === 'Venda' ? 'bg-green-100 text-green-700' :
-                                    sale.status_label === 'Condicional' ? 'bg-amber-100 text-amber-700' :
-                                    sale.status_label === 'Convertida' ? 'bg-blue-100 text-blue-700' :
-                                    sale.status_label === 'Baixa' ? 'bg-orange-100 text-orange-700' :
-                                    'bg-red-100 text-red-700'
-                                }`}>
-                                    {sale.status_label}
-                                </span>
+                                {sale.payment_status === 'pending' && sale.status_label === 'Venda' ? (
+                                    <span className="px-2 py-1 rounded text-xs font-bold uppercase bg-red-500 text-white animate-pulse">
+                                        Pagamento Pendente
+                                    </span>
+                                ) : (
+                                    <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${
+                                        sale.status_label === 'Venda' ? 'bg-green-100 text-green-700' :
+                                        sale.status_label === 'Condicional' ? 'bg-amber-100 text-amber-700' :
+                                        sale.status_label === 'Convertida' ? 'bg-blue-100 text-blue-700' :
+                                        sale.status_label === 'Baixa' ? 'bg-orange-100 text-orange-700' :
+                                        'bg-red-100 text-red-700'
+                                    }`}>
+                                        {sale.status_label}
+                                    </span>
+                                )}
                             </td>
                             <td className="p-4 text-center">
                                 <button onClick={() => handleOpenDetails(sale)} className="text-blue-500 hover:bg-blue-50 p-2 rounded transition-colors" title="Ver Detalhes">
@@ -274,6 +338,7 @@ export const Sales: React.FC = () => {
                             {/* Cabeçalho do Recibo */}
                             <div className="text-center border-b border-dashed border-slate-300 dark:border-slate-600 pb-4 header">
                                 <h2 className="text-xl font-bold uppercase">{selectedSale.status_label}</h2>
+                                {selectedSale.payment_status === 'pending' && <h3 className="text-red-500 font-bold uppercase text-sm mb-1">(Pendente / A Receber)</h3>}
                                 <p className="font-mono text-lg font-bold">{selectedSale.code}</p>
                                 <p className="text-sm text-slate-500">{new Date(selectedSale.created_at).toLocaleString()}</p>
                             </div>
@@ -378,6 +443,16 @@ export const Sales: React.FC = () => {
                         </button>
                         
                         <div className="flex gap-2">
+                             {/* BOTÃO DE RECEBER (Se pendente) */}
+                             {selectedSale.payment_status === 'pending' && selectedSale.status_label !== 'Condicional' && selectedSale.status_label !== 'Convertida' && (
+                                <button 
+                                    onClick={handleOpenSettleModal}
+                                    className="flex items-center px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 font-bold shadow-lg animate-pulse"
+                                >
+                                    <DollarSign size={18} className="mr-2"/> Receber Agora
+                                </button>
+                             )}
+
                             {selectedSale.status_label === 'Condicional' && (
                                 <button 
                                     onClick={() => handleStatusChange(selectedSale, 'Convertida')}
@@ -387,7 +462,7 @@ export const Sales: React.FC = () => {
                                 </button>
                             )}
                             
-                            {selectedSale.status_label !== 'Devolução' && selectedSale.status_label !== 'Convertida' && (
+                            {selectedSale.status_label !== 'Devolução' && selectedSale.status_label !== 'Convertida' && selectedSale.payment_status !== 'pending' && (
                                 !isEditUnlocked ? (
                                     <button 
                                         onClick={() => setIsSecurityModalOpen(true)}
@@ -436,6 +511,39 @@ export const Sales: React.FC = () => {
                     <div className="flex gap-2">
                         <button onClick={() => setIsSecurityModalOpen(false)} className="flex-1 py-2 text-slate-500">Cancelar</button>
                         <button onClick={verifyPassword} className="flex-1 py-2 bg-red-600 text-white rounded font-bold hover:bg-red-700">Autorizar</button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* MODAL DE RECEBIMENTO (SETTLE PAYMENT) */}
+        {isSettleModalOpen && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+                <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-6 w-full max-w-sm">
+                    <div className="text-center mb-6">
+                        <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-100 text-green-600 mb-2">
+                            <Wallet size={24}/>
+                        </div>
+                        <h3 className="text-lg font-bold dark:text-white">Receber Pagamento</h3>
+                        <p className="text-sm text-slate-500">Escolha como o cliente pagou esta dívida.</p>
+                        <p className="text-2xl font-bold mt-2 text-slate-800 dark:text-white">{selectedSale && formatCurrency(selectedSale.total_value)}</p>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-2 mb-6">
+                        {paymentMethods.map(m => (
+                            <button
+                                key={m.id}
+                                onClick={() => setSettleMethodId(m.id)}
+                                className={`p-3 rounded-lg border text-sm font-medium capitalize transition-all ${settleMethodId === m.id ? 'bg-primary-50 border-primary-500 text-primary-700' : 'border-slate-200 dark:border-slate-600 dark:text-slate-300'}`}
+                            >
+                                {m.name}
+                            </button>
+                        ))}
+                    </div>
+                    
+                    <div className="flex gap-2">
+                        <button onClick={() => setIsSettleModalOpen(false)} className="flex-1 py-2 text-slate-500">Cancelar</button>
+                        <button onClick={confirmSettlePayment} className="flex-1 py-2 bg-green-600 text-white rounded font-bold hover:bg-green-700">Confirmar</button>
                     </div>
                 </div>
             </div>

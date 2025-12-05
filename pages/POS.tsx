@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { Product, CartItem, Client, ProductVariation, PaymentMethod } from '../types';
-import { Search, ShoppingBag, Trash, UserPlus, CheckCircle, X, Save, User, Mail, MapPin, AlertCircle, Tag, TrendingDown, DollarSign, Percent, ScanBarcode } from 'lucide-react';
+import { Search, ShoppingBag, Trash, UserPlus, CheckCircle, X, Save, User, Mail, MapPin, AlertCircle, Tag, TrendingDown, DollarSign, Percent, ScanBarcode, Clock } from 'lucide-react';
 import { formatCurrency, maskCPF, maskPhone, getLocalDate } from '../utils/formatters';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -29,6 +29,9 @@ export const POS: React.FC = () => {
   const [installments, setInstallments] = useState(1);
   const [interestRate, setInterestRate] = useState(0);
   const [applyInterest, setApplyInterest] = useState(true);
+  
+  // Pending Sale State
+  const [isPendingSale, setIsPendingSale] = useState(false);
   
   // Discount States
   const [discountVal, setDiscountVal] = useState(''); 
@@ -242,7 +245,7 @@ export const POS: React.FC = () => {
   const selectedMethod = paymentMethods.find(m => m.id === selectedMethodId);
   const isCredit = selectedMethod?.type === 'credit';
   
-  const subTotalWithInterest = (isCredit && applyInterest)
+  const subTotalWithInterest = (isCredit && applyInterest && !isPendingSale)
     ? rawTotal * (1 + (interestRate / 100)) 
     : rawTotal;
   
@@ -261,6 +264,7 @@ export const POS: React.FC = () => {
       setTransactionType(type);
       setDiscountVal(''); // Reset discount
       setDiscountType('money');
+      setIsPendingSale(false); // Default to immediate payment
       setIsPaymentModalOpen(true);
       if (paymentMethods.length > 0) handleMethodSelect(paymentMethods[0].id);
   };
@@ -293,21 +297,30 @@ export const POS: React.FC = () => {
     const method = paymentMethods.find(m => m.id === selectedMethodId);
     const isCreditPayment = method?.type === 'credit';
 
+    // Status Determination
+    const finalPaymentStatus = transactionType === 'sale' 
+        ? (isPendingSale ? 'pending' : 'paid') 
+        : 'pending'; // Quotes are always pending until converted
+
+    const finalPaymentMethodName = isPendingSale 
+        ? 'A Receber' 
+        : (method ? method.name : 'Outros');
+
     // 2. Create Header
     const { data: sale, error } = await supabase.from('vendas').insert({
         code: code, 
         client_id: selectedClient,
         user_id: user?.id || '00000000-0000-0000-0000-000000000000', // Use Context User
         total_value: finalTotal,
-        payment_method: method ? method.name : 'Outros',
-        payment_status: transactionType === 'sale' ? 'paid' : 'pending',
+        payment_method: finalPaymentMethodName,
+        payment_status: finalPaymentStatus,
         status_label: transactionType === 'sale' ? 'Venda' : 'Condicional',
         payment_details: { 
-            installments: isCreditPayment ? installments : 1, 
-            interest_rate: (isCreditPayment && applyInterest) ? interestRate : 0, 
+            installments: (isCreditPayment && !isPendingSale) ? installments : 1, 
+            interest_rate: (isCreditPayment && applyInterest && !isPendingSale) ? interestRate : 0, 
             raw_value: rawTotal,
-            method_type: method?.type,
-            interest_applied: (isCreditPayment && applyInterest),
+            method_type: isPendingSale ? 'pending' : method?.type,
+            interest_applied: (isCreditPayment && applyInterest && !isPendingSale),
             discount_applied: calculatedDiscountValue,
             discount_type: discountType
         }
@@ -337,8 +350,8 @@ export const POS: React.FC = () => {
         }
     }
     
-    // Create transaction record for cash flow if it is a paid sale
-    if (transactionType === 'sale' && method) {
+    // Create transaction record for cash flow ONLY IF it is a paid sale (Not pending, Not Quote)
+    if (transactionType === 'sale' && !isPendingSale && method) {
         // Retrieve default account
         const { data: defaultAccount } = await supabase.from('bank_accounts').select('*').eq('is_default', true).single();
         const accountId = defaultAccount ? defaultAccount.id : (await supabase.from('bank_accounts').select('id').limit(1).single()).data?.id;
@@ -359,7 +372,11 @@ export const POS: React.FC = () => {
         }
     }
 
-    alert(`${transactionType === 'sale' ? 'Venda' : 'Condicional'} ${code} realizada com sucesso!`);
+    const msg = isPendingSale 
+        ? `Venda ${code} salva como PENDENTE (Fiado). Estoque atualizado.` 
+        : `${transactionType === 'sale' ? 'Venda' : 'Condicional'} ${code} realizada com sucesso!`;
+        
+    alert(msg);
     
     // Clear State
     setCart([]);
@@ -601,53 +618,72 @@ export const POS: React.FC = () => {
                 </h3>
                 
                 {transactionType === 'sale' && (
-                    <div className="space-y-4 mb-6">
-                        <div>
-                            <label className="block text-sm font-medium mb-2 dark:text-slate-300">Forma de Pagamento</label>
-                            <div className="grid grid-cols-2 gap-2">
-                                {paymentMethods.map(m => (
-                                    <button
-                                        key={m.id}
-                                        onClick={() => handleMethodSelect(m.id)}
-                                        className={`p-3 rounded-lg border text-sm font-medium capitalize transition-all ${selectedMethodId === m.id ? 'bg-primary-50 border-primary-500 text-primary-700' : 'border-slate-200 dark:border-slate-600 dark:text-slate-300'}`}
-                                    >
-                                        {m.name}
-                                    </button>
-                                ))}
+                    <div className="mb-4">
+                        {/* PENDING TOGGLE */}
+                        <div 
+                            className={`flex items-center p-3 rounded-lg border cursor-pointer mb-4 transition-colors ${isPendingSale ? 'bg-amber-50 border-amber-300' : 'bg-slate-50 border-slate-200 dark:bg-slate-700 dark:border-slate-600'}`}
+                            onClick={() => setIsPendingSale(!isPendingSale)}
+                        >
+                            <div className={`w-5 h-5 rounded border flex items-center justify-center mr-3 ${isPendingSale ? 'bg-amber-500 border-amber-500 text-white' : 'bg-white border-slate-300'}`}>
+                                {isPendingSale && <CheckCircle size={14} />}
                             </div>
+                            <div className="flex-1">
+                                <span className="font-bold text-sm block dark:text-white">Venda a Prazo / Fiado</span>
+                                <span className="text-xs text-slate-500 dark:text-slate-300">Marcar como "A Receber". O estoque sai, mas o dinheiro não entra agora.</span>
+                            </div>
+                            <Clock size={20} className={isPendingSale ? 'text-amber-500' : 'text-slate-300'} />
                         </div>
 
-                        {/* EXIBIR PARCELAMENTO APENAS SE FOR CRÉDITO */}
-                        {selectedMethod?.type === 'credit' && selectedMethod?.rates && Object.keys(selectedMethod.rates).length > 0 && (
-                             <div>
-                                <label className="block text-sm font-medium mb-1 dark:text-slate-300">Parcelamento</label>
-                                <select 
-                                    value={installments} 
-                                    onChange={e => handleInstallmentChange(Number(e.target.value))}
-                                    className="w-full p-2 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white"
-                                >
-                                    {getInstallmentOptions().map(i => (
-                                        <option key={i} value={i}>
-                                            {i}x {selectedMethod.rates[i] > 0 ? `(Juros: ${selectedMethod.rates[i]}%)` : '(Sem Juros)'}
-                                        </option>
-                                    ))}
-                                </select>
-                             </div>
-                        )}
+                        {!isPendingSale && (
+                            <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+                                <div>
+                                    <label className="block text-sm font-medium mb-2 dark:text-slate-300">Forma de Pagamento</label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {paymentMethods.map(m => (
+                                            <button
+                                                key={m.id}
+                                                onClick={() => handleMethodSelect(m.id)}
+                                                className={`p-3 rounded-lg border text-sm font-medium capitalize transition-all ${selectedMethodId === m.id ? 'bg-primary-50 border-primary-500 text-primary-700' : 'border-slate-200 dark:border-slate-600 dark:text-slate-300'}`}
+                                            >
+                                                {m.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
 
-                        {/* EXIBIR JUROS APENAS SE FOR CRÉDITO */}
-                        {selectedMethod?.type === 'credit' && interestRate > 0 && (
-                            <div className="flex items-center gap-2 p-2 bg-slate-50 dark:bg-slate-700/50 rounded border dark:border-slate-600">
-                                <input 
-                                    type="checkbox" 
-                                    id="applyInterest"
-                                    checked={applyInterest}
-                                    onChange={(e) => setApplyInterest(e.target.checked)}
-                                    className="w-4 h-4 text-primary-600 rounded"
-                                />
-                                <label htmlFor="applyInterest" className="text-sm dark:text-slate-300 cursor-pointer select-none">
-                                    Cobrar Juros da Maquininha (Repassar ao cliente)
-                                </label>
+                                {/* EXIBIR PARCELAMENTO APENAS SE FOR CRÉDITO */}
+                                {selectedMethod?.type === 'credit' && selectedMethod?.rates && Object.keys(selectedMethod.rates).length > 0 && (
+                                    <div>
+                                        <label className="block text-sm font-medium mb-1 dark:text-slate-300">Parcelamento</label>
+                                        <select 
+                                            value={installments} 
+                                            onChange={e => handleInstallmentChange(Number(e.target.value))}
+                                            className="w-full p-2 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                                        >
+                                            {getInstallmentOptions().map(i => (
+                                                <option key={i} value={i}>
+                                                    {i}x {selectedMethod.rates[i] > 0 ? `(Juros: ${selectedMethod.rates[i]}%)` : '(Sem Juros)'}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+
+                                {/* EXIBIR JUROS APENAS SE FOR CRÉDITO */}
+                                {selectedMethod?.type === 'credit' && interestRate > 0 && (
+                                    <div className="flex items-center gap-2 p-2 bg-slate-50 dark:bg-slate-700/50 rounded border dark:border-slate-600">
+                                        <input 
+                                            type="checkbox" 
+                                            id="applyInterest"
+                                            checked={applyInterest}
+                                            onChange={(e) => setApplyInterest(e.target.checked)}
+                                            className="w-4 h-4 text-primary-600 rounded"
+                                        />
+                                        <label htmlFor="applyInterest" className="text-sm dark:text-slate-300 cursor-pointer select-none">
+                                            Cobrar Juros da Maquininha (Repassar ao cliente)
+                                        </label>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -699,7 +735,7 @@ export const POS: React.FC = () => {
                             <span>Subtotal</span>
                             <span>{formatCurrency(rawTotal)}</span>
                         </div>
-                        {selectedMethod?.type === 'credit' && interestRate > 0 && applyInterest && (
+                        {selectedMethod?.type === 'credit' && interestRate > 0 && applyInterest && !isPendingSale && (
                             <div className="flex justify-between text-sm text-red-500">
                                 <span>Juros ({interestRate}%)</span>
                                 <span>+ {formatCurrency(rawTotal * (interestRate/100))}</span>
@@ -715,16 +751,21 @@ export const POS: React.FC = () => {
                    
                     <div className="text-center mt-4">
                         <p className="text-sm text-slate-500 dark:text-slate-400 uppercase tracking-wide">Valor Final</p>
-                        <p className="text-4xl font-bold text-slate-800 dark:text-white mt-1">{formatCurrency(finalTotal)}</p>
-                        {installments > 1 && applyInterest && isCredit && (
+                        <p className={`text-4xl font-bold mt-1 ${isPendingSale ? 'text-amber-500' : 'text-slate-800 dark:text-white'}`}>{formatCurrency(finalTotal)}</p>
+                        {installments > 1 && applyInterest && isCredit && !isPendingSale && (
                             <p className="text-sm text-primary-600 mt-1">{installments}x de {formatCurrency(finalTotal/installments)}</p>
+                        )}
+                         {isPendingSale && (
+                            <p className="text-xs text-amber-600 font-bold mt-2 uppercase bg-amber-50 inline-block px-2 py-1 rounded">Pagamento Pendente</p>
                         )}
                     </div>
                 </div>
 
                 <div className="flex gap-3">
                     <button onClick={() => setIsPaymentModalOpen(false)} className="flex-1 py-3 text-slate-600 dark:text-slate-300 font-medium border rounded-lg hover:bg-slate-50">Cancelar</button>
-                    <button onClick={finalizeTransaction} className="flex-1 py-3 bg-primary-600 text-white rounded-lg font-bold hover:bg-primary-700 shadow-lg">Confirmar</button>
+                    <button onClick={finalizeTransaction} className={`flex-1 py-3 text-white rounded-lg font-bold shadow-lg ${isPendingSale ? 'bg-amber-500 hover:bg-amber-600' : 'bg-primary-600 hover:bg-primary-700'}`}>
+                        {isPendingSale ? 'Salvar como Pendente' : 'Confirmar'}
+                    </button>
                 </div>
             </div>
         </div>
