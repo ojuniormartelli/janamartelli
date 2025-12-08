@@ -61,24 +61,17 @@ export const POS: React.FC = () => {
   // --- BARCODE SCANNER LISTENER ---
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
-        // Se estiver digitando em um input (exceto o de busca que tratamos separado, ou se não estiver focado), 
-        // a lógica de buffer pode precisar de ajuste. Aqui assumimos que scanner funciona como teclado rápido.
-        
         const target = e.target as HTMLElement;
-        // Se o foco estiver no input de busca, deixamos ele lidar com o Enter, mas capturamos se não estiver focado em inputs de texto
         if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
-             // Se for o input de busca, ok, ele tem o onKeyDown próprio.
              return; 
         }
 
-        // Ignora se modais estiverem abertos
         if (isPaymentModalOpen || isNewClientModalOpen || discountItemIndex !== null) return;
 
         const currentTime = Date.now();
         const timeDiff = currentTime - lastKeyTime.current;
         lastKeyTime.current = currentTime;
 
-        // Se for Enter, processa o buffer
         if (e.key === 'Enter') {
             if (barcodeBuffer.current.length > 0) {
                 processBarcode(barcodeBuffer.current);
@@ -87,13 +80,10 @@ export const POS: React.FC = () => {
             return;
         }
 
-        // Limpa buffer se demorar muito entre teclas (digitação manual vs scanner)
-        // Scanners geralmente enviam caracteres em < 50ms
         if (timeDiff > 100) {
             barcodeBuffer.current = '';
         }
 
-        // Adiciona caracteres imprimíveis (números/letras)
         if (e.key.length === 1) {
             barcodeBuffer.current += e.key;
         }
@@ -108,11 +98,9 @@ export const POS: React.FC = () => {
       if (!sku) return;
       const cleanSku = sku.trim().toUpperCase();
 
-      // Procura produto pelo SKU
       let foundProduct: Product | undefined;
       let foundVariation: ProductVariation | undefined;
 
-      // Iterar produtos e variações
       for (const p of products) {
           const v = p.variations?.find(variation => variation.sku && variation.sku.toUpperCase() === cleanSku);
           if (v) {
@@ -124,12 +112,10 @@ export const POS: React.FC = () => {
 
       if (foundProduct && foundVariation) {
           addToCart(foundProduct, foundVariation);
-          // Feedback visual: limpar busca se o SKU veio de lá
           if (search.toUpperCase() === cleanSku) {
               setSearch('');
           }
       } else {
-          // Opcional: Toast de erro
           console.log(`Produto com SKU ${sku} não encontrado.`);
       }
   };
@@ -166,7 +152,6 @@ export const POS: React.FC = () => {
     if (payMethods) setPaymentMethods(payMethods);
   };
 
-  // --- HANDLE CONVERSION FROM SALES PAGE ---
   useEffect(() => {
       if (location.state?.conversionSale) {
           const sale = location.state.conversionSale;
@@ -238,7 +223,6 @@ export const POS: React.FC = () => {
   const selectedMethod = paymentMethods.find(m => m.id === selectedMethodId);
   const isCredit = selectedMethod?.type === 'credit';
   
-  // Juros não se aplicam se for venda pendente (fiado)
   const subTotalWithInterest = (isCredit && applyInterest && !isPendingSale)
     ? rawTotal * (1 + (interestRate / 100)) 
     : rawTotal;
@@ -257,7 +241,7 @@ export const POS: React.FC = () => {
       setTransactionType(type);
       setDiscountVal('');
       setDiscountType('money');
-      setIsPendingSale(false); // Reset pendente
+      setIsPendingSale(false); 
       setIsPaymentModalOpen(true);
       if (paymentMethods.length > 0) handleMethodSelect(paymentMethods[0].id);
   };
@@ -283,23 +267,20 @@ export const POS: React.FC = () => {
   };
 
   const finalizeTransaction = async () => {
-    // 1. Get Code
     const prefix = transactionType === 'sale' ? 'V' : 'C';
     const { data: code } = await supabase.rpc('get_next_code', { prefix });
 
     const method = paymentMethods.find(m => m.id === selectedMethodId);
     const isCreditPayment = method?.type === 'credit';
 
-    // Determina Status e Método
     const finalPaymentStatus = transactionType === 'sale' 
         ? (isPendingSale ? 'pending' : 'paid') 
-        : 'pending'; // Condicionais sempre pending
+        : 'pending';
 
     const finalMethodName = isPendingSale 
         ? 'A Receber' 
         : (method ? method.name : 'Outros');
 
-    // 2. Create Header
     const { data: sale, error } = await supabase.from('vendas').insert({
         code: code, 
         client_id: selectedClient,
@@ -324,7 +305,6 @@ export const POS: React.FC = () => {
         return;
     }
 
-    // 3. Items
     const saleItems = cart.map(item => ({
         sale_id: sale.id,
         product_variation_id: item.variation.id,
@@ -335,7 +315,6 @@ export const POS: React.FC = () => {
 
     await supabase.from('venda_itens').insert(saleItems);
 
-    // 4. Update Stock & Financial (if Sale)
     for (const item of cart) {
         const { data: currentVar } = await supabase.from('estoque_tamanhos').select('quantity').eq('id', item.variation.id).single();
         if(currentVar) {
@@ -343,9 +322,7 @@ export const POS: React.FC = () => {
         }
     }
     
-    // Create transaction record for cash flow ONLY IF it is a paid sale (Not pending, Not Quote)
     if (transactionType === 'sale' && !isPendingSale && method) {
-        // Retrieve default account
         const { data: defaultAccount } = await supabase.from('bank_accounts').select('*').eq('is_default', true).single();
         const accountId = defaultAccount ? defaultAccount.id : (await supabase.from('bank_accounts').select('id').limit(1).single()).data?.id;
 
@@ -358,7 +335,6 @@ export const POS: React.FC = () => {
                  category: 'Vendas',
                  date: getLocalDate()
              });
-             // Update account balance
              if (defaultAccount) {
                  await supabase.from('bank_accounts').update({ balance: defaultAccount.balance + finalTotal }).eq('id', accountId);
              }
@@ -370,12 +346,9 @@ export const POS: React.FC = () => {
         : `${transactionType === 'sale' ? 'Venda' : 'Condicional'} ${code} realizada com sucesso!`;
 
     alert(msg);
-    
-    // Clear State
     setCart([]);
     setIsPaymentModalOpen(false);
     setSelectedClient('');
-    
     window.history.replaceState({}, document.title);
     navigate(location.pathname, { replace: true, state: {} });
     loadData();
@@ -443,33 +416,44 @@ export const POS: React.FC = () => {
                         <div key={product.id} className="bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-700 hover:shadow-lg transition-all flex flex-col overflow-hidden">
                             <div className="p-3 bg-white dark:bg-slate-800 border-b border-slate-100 dark:border-slate-600">
                                 <h3 className="font-bold text-slate-800 dark:text-white leading-tight">{product.nome}</h3>
-                                <p className="text-xs text-slate-500 mt-1">{product.categoria}</p>
+                                <div className="flex justify-between items-start mt-1">
+                                     <p className="text-xs text-slate-500">{product.categoria}</p>
+                                </div>
                             </div>
                             <div className="flex-1 overflow-y-auto max-h-60 p-3 space-y-4">
-                                {Object.keys(variationsByModel).sort().map(model => (
-                                    <div key={model} className="space-y-2">
-                                        <div className="border-b border-slate-200 dark:border-slate-600 pb-1">
-                                            <span className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase">{model}</span>
+                                {Object.keys(variationsByModel).sort().map(model => {
+                                    // Pega a referência do primeiro item deste modelo, ou usa a do produto pai
+                                    const variantRef = variationsByModel[model][0]?.reference || product.modelo;
+                                    return (
+                                        <div key={model} className="space-y-2">
+                                            <div className="border-b border-slate-200 dark:border-slate-600 pb-1">
+                                                <span className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase block">{model}</span>
+                                                {variantRef && (
+                                                    <span className="text-[10px] text-slate-400 font-mono bg-slate-100 dark:bg-slate-700/50 px-1 rounded inline-block mt-0.5">
+                                                        Ref: {variantRef}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="flex flex-wrap gap-2">
+                                                {variationsByModel[model].sort((a,b) => getSizeWeight(a.size) - getSizeWeight(b.size)).map(v => (
+                                                    <button 
+                                                        key={v.id} 
+                                                        onClick={() => addToCart(product, v)} 
+                                                        className="flex flex-col items-center justify-center bg-white dark:bg-slate-600 border border-slate-200 dark:border-slate-500 rounded p-1 min-w-[3.5rem] min-h-[3.5rem] hover:border-primary-500 shadow-sm transition-all"
+                                                    >
+                                                        <div className="flex items-center gap-1">
+                                                            <span className="font-bold text-sm text-slate-800 dark:text-white">{v.size}</span>
+                                                            <span className={`text-[10px] font-medium ${v.quantity < 2 ? 'text-red-500' : 'text-slate-400'}`}>
+                                                                ({v.quantity})
+                                                            </span>
+                                                        </div>
+                                                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">{formatCurrency(v.price_sale)}</span>
+                                                    </button>
+                                                ))}
+                                            </div>
                                         </div>
-                                        <div className="flex flex-wrap gap-2">
-                                            {variationsByModel[model].sort((a,b) => getSizeWeight(a.size) - getSizeWeight(b.size)).map(v => (
-                                                <button 
-                                                    key={v.id} 
-                                                    onClick={() => addToCart(product, v)} 
-                                                    className="flex flex-col items-center justify-center bg-white dark:bg-slate-600 border border-slate-200 dark:border-slate-500 rounded p-1 min-w-[3.5rem] min-h-[3.5rem] hover:border-primary-500 shadow-sm transition-all"
-                                                >
-                                                    <div className="flex items-center gap-1">
-                                                        <span className="font-bold text-sm text-slate-800 dark:text-white">{v.size}</span>
-                                                        <span className={`text-[10px] font-medium ${v.quantity < 2 ? 'text-red-500' : 'text-slate-400'}`}>
-                                                            ({v.quantity})
-                                                        </span>
-                                                    </div>
-                                                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">{formatCurrency(v.price_sale)}</span>
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
                     );
@@ -491,6 +475,17 @@ export const POS: React.FC = () => {
                     <div className="flex-1">
                         <p className="font-medium text-slate-800 dark:text-white text-sm">{item.product.nome}</p>
                         <p className="text-xs text-slate-500">{item.variation.model_variant} | Tam: <b>{item.variation.size}</b></p>
+                        
+                        {/* Reference Display in Cart */}
+                        {(item.variation.reference || item.product.modelo) && (
+                             <p className="text-[10px] text-slate-400 font-mono leading-tight mt-0.5">
+                                Ref: {item.variation.reference || item.product.modelo}
+                             </p>
+                        )}
+                        {item.variation.sku && (
+                             <p className="text-[10px] text-slate-300 font-mono leading-tight mt-0.5">SKU: {item.variation.sku}</p>
+                        )}
+
                         <div className="flex items-center gap-2 mt-1">
                              <p className="text-xs font-bold text-primary-600">{formatCurrency(item.customPrice || item.variation.price_sale)}</p>
                              {item.customPrice && item.customPrice !== item.variation.price_sale && (
