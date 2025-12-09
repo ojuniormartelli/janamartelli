@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { Product, CartItem, Client, ProductVariation, PaymentMethod } from '../types';
-import { Search, ShoppingBag, Trash, UserPlus, CheckCircle, X, Save, User, Mail, MapPin, AlertCircle, Tag, TrendingDown, DollarSign, Percent, ScanBarcode, Clock, CreditCard } from 'lucide-react';
+import { Search, ShoppingBag, Trash, UserPlus, CheckCircle, X, Save, User, Mail, MapPin, AlertCircle, Tag, TrendingDown, DollarSign, Percent, ScanBarcode, Clock, CreditCard, ClipboardList } from 'lucide-react';
 import { formatCurrency, maskCPF, maskPhone, getLocalDate } from '../utils/formatters';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -315,6 +315,8 @@ export const POS: React.FC = () => {
 
     await supabase.from('venda_itens').insert(saleItems);
 
+    // 4. Update Stock (Always - Sale or Conditional)
+    // O estoque é baixado aqui para garantir que o produto não seja vendido para outro enquanto estiver em condicional.
     for (const item of cart) {
         const { data: currentVar } = await supabase.from('estoque_tamanhos').select('quantity').eq('id', item.variation.id).single();
         if(currentVar) {
@@ -341,9 +343,15 @@ export const POS: React.FC = () => {
         }
     }
 
-    const msg = isPendingSale 
-        ? `Venda ${code} registrada como PENDENTE (Fiado). Estoque atualizado.` 
-        : `${transactionType === 'sale' ? 'Venda' : 'Condicional'} ${code} realizada com sucesso!`;
+    // Mensagem Confirmando Baixa de Estoque
+    let msg = '';
+    if (isPendingSale) {
+        msg = `Venda ${code} registrada como PENDENTE (Fiado). Estoque atualizado (Baixado).`;
+    } else if (transactionType === 'quote') {
+        msg = `Condicional ${code} gerada. Itens baixados do estoque com sucesso.`;
+    } else {
+        msg = `Venda ${code} realizada com sucesso! Estoque atualizado.`;
+    }
 
     alert(msg);
     setCart([]);
@@ -536,8 +544,21 @@ export const POS: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-                <button onClick={() => handleOpenPayment('quote')} disabled={cart.length === 0} className="py-3 bg-amber-100 text-amber-800 rounded-lg font-bold border border-amber-200 disabled:opacity-50 text-sm">Condicional</button>
-                <button onClick={() => handleOpenPayment('sale')} disabled={cart.length === 0} className="py-3 bg-primary-600 text-white rounded-lg font-bold shadow-lg disabled:opacity-50 text-sm">Finalizar</button>
+                <button 
+                    onClick={() => handleOpenPayment('quote')} 
+                    disabled={cart.length === 0} 
+                    className="py-3 bg-amber-100 text-amber-800 rounded-lg font-bold border border-amber-200 disabled:opacity-50 text-sm flex flex-col items-center justify-center leading-tight hover:bg-amber-200 transition-colors"
+                >
+                    <span className="flex items-center"><ClipboardList size={16} className="mr-1"/> Condicional</span>
+                    <span className="text-[10px] font-normal opacity-80">(Baixa Estoque)</span>
+                </button>
+                <button 
+                    onClick={() => handleOpenPayment('sale')} 
+                    disabled={cart.length === 0} 
+                    className="py-3 bg-primary-600 text-white rounded-lg font-bold shadow-lg disabled:opacity-50 text-sm flex items-center justify-center hover:bg-primary-700 transition-colors"
+                >
+                    <CheckCircle size={18} className="mr-2"/> Finalizar
+                </button>
             </div>
         </div>
       </div>
