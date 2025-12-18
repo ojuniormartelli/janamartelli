@@ -6,11 +6,13 @@ export interface Migration {
     sql: string;
 }
 
-// 1. SCRIPT PARA INSTALAÇÃO DO ZERO (APAGA TUDO)
+// 1. SCRIPT PARA INSTALAÇÃO DO ZERO (PARA NOVOS CLIENTES - APAGA TUDO!)
 export const fullInstallScript = `-- =================================================================
--- OPÇÃO A: INSTALAÇÃO COMPLETA (DO ZERO - APAGA TUDO!)
+-- OPÇÃO A: INSTALAÇÃO COMPLETA (NOVO CLIENTE - APAGA TUDO!)
+-- Use este script para configurar um banco de dados NOVO do zero.
 -- =================================================================
 
+-- LIMPEZA
 DROP TABLE IF EXISTS public.transactions CASCADE;
 DROP TABLE IF EXISTS public.bank_accounts CASCADE;
 DROP TABLE IF EXISTS public.venda_itens CASCADE;
@@ -29,6 +31,7 @@ DROP FUNCTION IF EXISTS public.get_next_code;
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
+-- TABELAS
 CREATE TABLE public.profiles (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
   username TEXT UNIQUE NOT NULL,
@@ -159,6 +162,7 @@ CREATE TABLE public.transactions (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- RLS
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public Access Profiles" ON profiles FOR ALL USING (true) WITH CHECK (true);
 ALTER TABLE clients ENABLE ROW LEVEL SECURITY;
@@ -182,6 +186,7 @@ CREATE POLICY "Public Access Transactions" ON transactions FOR ALL USING (true) 
 ALTER TABLE product_sizes ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public Access Sizes" ON product_sizes FOR ALL USING (true) WITH CHECK (true);
 
+-- DADOS INICIAIS
 INSERT INTO profiles (id, username, password, role) VALUES ('00000000-0000-0000-0000-000000000000', 'admin', 'Gs020185*', 'admin') ON CONFLICT (id) DO NOTHING;
 INSERT INTO store_settings (id, store_name, theme_color) VALUES (1, 'Minha Loja', '#0ea5e9') ON CONFLICT (id) DO NOTHING;
 INSERT INTO payment_methods (name, type, rates) VALUES ('Dinheiro', 'cash', '{}'), ('Pix', 'pix', '{}'), ('Débito', 'debit', '{"1": 1.5}'), ('Crédito', 'credit', '{"1": 3.0}') ON CONFLICT DO NOTHING;
@@ -195,13 +200,12 @@ ON CONFLICT (name) DO NOTHING;
 NOTIFY pgrst, 'reload schema';
 `;
 
-// 2. SCRIPT DE CORREÇÃO (APENAS CRIA A TABELA DE TAMANHOS SEM APAGAR NADA)
+// 2. SCRIPT DE CORREÇÃO (PATCH) - NÃO APAGA DADOS
 export const patchSizesScript = `-- =================================================================
--- OPÇÃO B: APENAS ATUALIZAR (NÃO APAGA SEUS DADOS!)
--- Use este script se o sistema der erro de 'table not found' em Tamanhos.
+-- OPÇÃO B: CORREÇÃO / ATUALIZAÇÃO (NÃO APAGA SEUS DADOS!)
+-- Use este script para adicionar a tabela de Tamanhos que está faltando.
 -- =================================================================
 
--- 1. Criar a tabela se ela não existir
 CREATE TABLE IF NOT EXISTS public.product_sizes (
   id SERIAL PRIMARY KEY,
   name TEXT UNIQUE NOT NULL,
@@ -209,10 +213,8 @@ CREATE TABLE IF NOT EXISTS public.product_sizes (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 2. Habilitar segurança (RLS)
 ALTER TABLE public.product_sizes ENABLE ROW LEVEL SECURITY;
 
--- 3. Criar política de acesso público
 DO $$ 
 BEGIN
     IF NOT EXISTS (
@@ -223,41 +225,24 @@ BEGIN
     END IF;
 END $$;
 
--- 4. Popular com os tamanhos padrão (não sobrescreve se já existir)
 INSERT INTO public.product_sizes (name, sort_order) VALUES
 ('RN', 0), ('PB', 1), ('PP', 2), ('P', 3), ('M', 4), ('G', 5), ('GG', 6), ('XG', 7), ('XXG', 8), ('U', 9),
 ('1', 10), ('2', 11), ('3', 12), ('4', 13), ('6', 14), ('8', 15), ('10', 16), ('12', 17), ('14', 18), ('16', 19)
 ON CONFLICT (name) DO NOTHING;
 
--- 5. Recarregar cache do Supabase para reconhecer a nova tabela
 NOTIFY pgrst, 'reload schema';
 `;
 
-export const fixSequencesSQL = `-- Correção de Sequências segura para Postgres
+export const dbSetupScript = fullInstallScript;
+export const fixSequencesSQL = `-- Correção de Sequências
 DO $$
 DECLARE
     r RECORD;
-    seq_name TEXT;
 BEGIN
     FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
-        IF EXISTS (
-            SELECT 1 FROM pg_class c 
-            JOIN pg_namespace n ON n.oid = c.relnamespace 
-            WHERE c.relname = r.tablename || '_id_seq' AND n.nspname = 'public'
-        ) THEN
+        IF EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relname = r.tablename || '_id_seq' AND n.nspname = 'public') THEN
             EXECUTE format('SELECT setval(pg_get_serial_sequence(%L, %L), COALESCE(MAX(id), 0) + 1, false) FROM %I', 'public.' || r.tablename, 'id', r.tablename);
         END IF;
     END LOOP;
 END $$;
 `;
-
-export const migrations: Migration[] = [
-    {
-        id: 'install_supabase_v7_complete',
-        date: '2025-02-27 19:00',
-        description: 'Instalação Completa (Supabase) - Todas as tabelas incluindo Tamanhos',
-        sql: fullInstallScript
-    }
-];
-
-export const dbSetupScript = fullInstallScript;

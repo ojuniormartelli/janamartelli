@@ -1,9 +1,10 @@
+
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { Lock, User, Eye, EyeOff, AlertTriangle, Database, X, Check, Copy, Wifi, WifiOff, Info } from 'lucide-react';
+import { Lock, User, Eye, EyeOff, AlertTriangle, Database, X, Check, Copy, Wifi, WifiOff, Info, Wand2, FileText } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { dbSetupScript } from '../utils/database.sql';
-import { isDbConfigured, supabase, isUsingEnv } from '../supabaseClient';
+import { fullInstallScript, patchSizesScript } from '../utils/database.sql';
+import { isDbConfigured, supabase } from '../supabaseClient';
 
 export const Login: React.FC = () => {
   const { signIn } = useAuth();
@@ -21,7 +22,7 @@ export const Login: React.FC = () => {
   const [showInstallModal, setShowInstallModal] = useState(false);
   const [masterPass, setMasterPass] = useState('');
   const [showSql, setShowSql] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
 
   useEffect(() => {
       checkConnection();
@@ -30,25 +31,16 @@ export const Login: React.FC = () => {
   const checkConnection = async () => {
       if (!isDbConfigured) {
           setConnectionStatus('error');
-          setEnvDebugInfo(`Variáveis de ambiente não encontradas. Verifique VITE_SUPABASE_URL ou NEXT_PUBLIC_SUPABASE_URL na Vercel.`);
+          setEnvDebugInfo(`Variáveis de ambiente não encontradas. Verifique VITE_SUPABASE_URL na Vercel.`);
           return;
       }
       try {
-          // Teste simples de conexão
           const { error } = await supabase.from('store_settings').select('id').limit(1);
-          
-          // Se der erro de tabela não encontrada (PGRST301/42P01), significa que CONECTOU, mas o SQL não foi rodado. Isso é "Connected".
           if (!error || error.code === 'PGRST301' || error.code === '42P01') { 
              setConnectionStatus('connected');
           } else {
-             // Se der erro de fetch ou 500, a conexão falhou
-             if (error.message && (error.message.includes('fetch') || error.code === '500')) {
-                 setConnectionStatus('error');
-                 setEnvDebugInfo(`Erro de Rede: ${error.message}`);
-             } else {
-                 // Outros erros (ex: Auth) significam que conectou
-                 setConnectionStatus('connected');
-             }
+             setConnectionStatus('error');
+             setEnvDebugInfo(`Erro: ${error.message}`);
           }
       } catch (e: any) {
           setConnectionStatus('error');
@@ -63,17 +55,11 @@ export const Login: React.FC = () => {
 
     const { error } = await signIn(username, password);
     if (error) {
-      setError(typeof error === 'string' ? error : 'Falha ao entrar. Usuário ou senha incorretos.');
+      setError(typeof error === 'string' ? error : 'Falha ao entrar.');
       setLoading(false);
     } else {
       navigate('/');
     }
-  };
-
-  const handleOpenInstall = () => {
-      setMasterPass('');
-      setShowSql(false);
-      setShowInstallModal(true);
   };
 
   const handleVerifyMasterPass = () => {
@@ -84,10 +70,10 @@ export const Login: React.FC = () => {
       }
   };
 
-  const handleCopySql = () => {
-      navigator.clipboard.writeText(dbSetupScript);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+  const handleCopySql = (sql: string, id: string) => {
+      navigator.clipboard.writeText(sql);
+      setCopied(id);
+      setTimeout(() => setCopied(null), 2000);
   };
 
   return (
@@ -97,8 +83,8 @@ export const Login: React.FC = () => {
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-primary-100 text-primary-600 mb-4">
               <User size={24} />
           </div>
-          <h1 className="text-3xl font-bold text-slate-800 dark:text-white mb-2">Bem-vindo</h1>
-          <p className="text-slate-500 dark:text-slate-400 text-sm">PijamaManager Pro</p>
+          <h1 className="text-3xl font-bold text-slate-800 dark:text-white mb-2">PijamaManager Pro</h1>
+          <p className="text-slate-500 dark:text-slate-400 text-sm">Controle de Estoque e PDV</p>
         </div>
 
         {error && (
@@ -107,143 +93,91 @@ export const Login: React.FC = () => {
           </div>
         )}
 
-        {connectionStatus === 'error' && (
-             <div className="mb-6 p-3 bg-orange-50 border border-orange-200 text-orange-800 rounded-lg text-xs break-words">
-                 <div className="flex items-center font-bold mb-1">
-                     <Info size={14} className="mr-1"/> Diagnóstico de Conexão:
-                 </div>
-                 {envDebugInfo}
-             </div>
-        )}
-
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-              Usuário
-            </label>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Usuário</label>
             <div className="relative">
               <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white dark:bg-slate-700 dark:text-white"
-                placeholder="Usuário"
-                required
-              />
+              <input type="text" value={username} onChange={e => setUsername(e.target.value)} className="w-full pl-10 pr-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 dark:text-white" placeholder="admin" required />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-              Senha
-            </label>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Senha</label>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-              <input
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-10 pr-10 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white dark:bg-slate-700 dark:text-white"
-                placeholder="Senha"
-                required
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-              >
+              <input type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} className="w-full pl-10 pr-10 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 dark:text-white" placeholder="Senha" required />
+              <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
           </div>
 
-          <button
-            type="submit"
-            disabled={loading || connectionStatus === 'error'}
-            className="w-full bg-primary-600 hover:bg-primary-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors disabled:opacity-50 flex justify-center items-center shadow-lg shadow-primary-900/20 disabled:cursor-not-allowed"
-          >
-            {loading ? (
-              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            ) : (
-              'Entrar'
-            )}
+          <button type="submit" disabled={loading} className="w-full bg-primary-600 hover:bg-primary-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors flex justify-center items-center shadow-lg shadow-primary-900/20 disabled:opacity-50">
+            {loading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : 'Entrar'}
           </button>
         </form>
 
         <div className="mt-8 pt-6 border-t dark:border-slate-700 flex justify-between items-center">
             <div className="flex items-center text-xs text-slate-400">
                 {connectionStatus === 'connected' ? (
-                    <span className="flex items-center text-green-600"><Wifi size={12} className="mr-1"/> Conectado</span>
+                    <span className="flex items-center text-green-600 font-bold"><Wifi size={12} className="mr-1"/> Conectado</span>
                 ) : (
-                    <span className="flex items-center text-red-500"><WifiOff size={12} className="mr-1"/> Sem Conexão</span>
+                    <span className="flex items-center text-red-500 font-bold"><WifiOff size={12} className="mr-1"/> Sem Conexão</span>
                 )}
             </div>
-            
-            <button 
-                onClick={handleOpenInstall}
-                className="text-xs text-slate-400 hover:text-primary-500 flex items-center justify-center gap-1 transition-colors"
-            >
-                <Database size={12} /> Instalação / SQL
+            <button onClick={() => setShowInstallModal(true)} className="text-xs text-slate-400 hover:text-primary-500 flex items-center gap-1 transition-colors">
+                <Database size={12} /> Instalação / Patch
             </button>
         </div>
       </div>
 
-      {/* MODAL DE INSTALAÇÃO / SQL */}
+      {/* MODAL DE INSTALAÇÃO */}
       {showInstallModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
-              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                   <div className="p-4 border-b dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
-                      <h3 className="font-bold dark:text-white flex items-center">
-                          <Database className="mr-2 text-primary-500" size={20}/> 
-                          Configuração de Banco de Dados
-                      </h3>
+                      <h3 className="font-bold dark:text-white flex items-center"><Database className="mr-2 text-primary-500" size={20}/> Scripts SQL Supabase</h3>
                       <button onClick={() => setShowInstallModal(false)}><X size={20} className="text-slate-400"/></button>
                   </div>
                   
                   <div className="p-6 overflow-y-auto">
                       {!showSql ? (
-                          <div className="space-y-4">
-                              <p className="text-slate-600 dark:text-slate-300 text-sm">
-                                  Para visualizar o Script SQL de instalação ou configurar a conexão, insira a <b>Senha Mestra</b>.
-                              </p>
-                              <div>
-                                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Senha Mestra</label>
-                                  <input 
-                                      type="password"
-                                      className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white"
-                                      value={masterPass}
-                                      onChange={e => setMasterPass(e.target.value)}
-                                      onKeyDown={e => e.key === 'Enter' && handleVerifyMasterPass()}
-                                  />
-                              </div>
-                              <button 
-                                  onClick={handleVerifyMasterPass}
-                                  className="w-full py-2 bg-slate-800 text-white rounded font-bold hover:bg-slate-700"
-                              >
-                                  Acessar Configurações
-                              </button>
+                          <div className="space-y-4 max-w-sm mx-auto py-8">
+                              <p className="text-slate-600 dark:text-slate-300 text-sm text-center">Para visualizar os scripts SQL, insira a <b>Senha Mestra</b>.</p>
+                              <input type="password" className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white text-center" value={masterPass} onChange={e => setMasterPass(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleVerifyMasterPass()}/>
+                              <button onClick={handleVerifyMasterPass} className="w-full py-2 bg-slate-800 text-white rounded font-bold hover:bg-slate-700">Acessar Scripts</button>
                           </div>
                       ) : (
-                          <div className="space-y-6">
-                              {/* Seção de SQL */}
-                              <div className="space-y-2">
-                                  <h4 className="font-bold text-sm dark:text-white">1. Script de Instalação (SQL)</h4>
-                                  <div className="bg-green-50 text-green-800 p-3 rounded border border-green-200 text-xs">
-                                      Copie o código abaixo e execute no SQL Editor do Supabase/Neon para criar as tabelas e o usuário admin.
-                                  </div>
-                                  <div className="relative">
-                                      <pre className="bg-slate-900 text-green-400 p-4 rounded-lg text-xs font-mono overflow-auto max-h-60 select-all">
-                                          {dbSetupScript}
-                                      </pre>
-                                      <button 
-                                          onClick={handleCopySql}
-                                          className="absolute top-2 right-2 px-3 py-1 bg-white/10 hover:bg-white/20 text-white rounded text-xs flex items-center backdrop-blur-sm"
-                                      >
-                                          {copied ? <Check size={14} className="mr-1"/> : <Copy size={14} className="mr-1"/>}
-                                          {copied ? 'Copiado' : 'Copiar'}
+                          <div className="space-y-8">
+                              {/* PATCH SEGURO */}
+                              <div className="space-y-3">
+                                  <div className="flex justify-between items-center">
+                                      <h4 className="font-bold text-sm text-blue-600 flex items-center"><Wand2 size={16} className="mr-1"/> Script de Correção (Patch)</h4>
+                                      <button onClick={() => handleCopySql(patchSizesScript, 'patch')} className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-xs font-bold hover:bg-blue-200 flex items-center">
+                                          {copied === 'patch' ? <Check size={14} className="mr-1"/> : <Copy size={14} className="mr-1"/>}
+                                          {copied === 'patch' ? 'Copiado!' : 'Copiar Patch'}
                                       </button>
                                   </div>
+                                  <div className="bg-blue-50 text-blue-800 p-3 rounded border border-blue-100 text-[10px] leading-relaxed">
+                                      <b>Use para atualizar sistemas existentes:</b> Cria apenas as tabelas faltando sem apagar suas vendas e produtos.
+                                  </div>
+                                  <pre className="bg-slate-900 text-blue-300 p-4 rounded-lg text-[10px] font-mono overflow-auto max-h-32 border border-slate-700">{patchSizesScript}</pre>
+                              </div>
+
+                              {/* INSTALAÇÃO COMPLETA */}
+                              <div className="space-y-3">
+                                  <div className="flex justify-between items-center">
+                                      <h4 className="font-bold text-sm text-slate-800 dark:text-white flex items-center"><FileText size={16} className="mr-1"/> Instalação Completa (Novo Cliente)</h4>
+                                      <button onClick={() => handleCopySql(fullInstallScript, 'full')} className="px-3 py-1 bg-slate-200 text-slate-800 rounded text-xs font-bold hover:bg-slate-300 flex items-center">
+                                          {copied === 'full' ? <Check size={14} className="mr-1"/> : <Copy size={14} className="mr-1"/>}
+                                          {copied === 'full' ? 'Copiado!' : 'Copiar Full'}
+                                      </button>
+                                  </div>
+                                  <div className="bg-red-50 text-red-800 p-3 rounded border border-red-100 text-[10px] leading-relaxed font-bold uppercase">
+                                      CUIDADO: Este script apaga todos os dados e reseta o banco de dados.
+                                  </div>
+                                  <pre className="bg-slate-900 text-green-400 p-4 rounded-lg text-[10px] font-mono overflow-auto max-h-32 border border-slate-700">{fullInstallScript}</pre>
                               </div>
                           </div>
                       )}
