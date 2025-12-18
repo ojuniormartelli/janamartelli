@@ -1,5 +1,4 @@
 
-
 export interface Profile {
   id: string;
   username: string;
@@ -42,6 +41,13 @@ export interface ProductVariation {
   sku: string;
   reference: string;
   products?: Product; // For joined queries
+}
+
+export interface ProductSize {
+  id: number;
+  name: string;
+  sort_order: number;
+  created_at?: string;
 }
 
 export interface PaymentMethod {

@@ -1,7 +1,4 @@
 
-
-
-
 export interface Migration {
     id: string;
     date: string;
@@ -25,6 +22,7 @@ DROP TABLE IF EXISTS public.clients CASCADE;
 DROP TABLE IF EXISTS public.payment_methods CASCADE;
 DROP TABLE IF EXISTS public.store_settings CASCADE;
 DROP TABLE IF EXISTS public.profiles CASCADE;
+DROP TABLE IF EXISTS public.product_sizes CASCADE;
 DROP SEQUENCE IF EXISTS public.sales_seq;
 DROP SEQUENCE IF EXISTS public.quotes_seq;
 DROP SEQUENCE IF EXISTS public.losses_seq;
@@ -37,9 +35,9 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE public.profiles (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
   username TEXT UNIQUE NOT NULL,
-  password TEXT DEFAULT 'Gs020185*', -- Senha inicial Segura
+  password TEXT DEFAULT 'Gs020185*', 
   role TEXT CHECK (role IN ('admin', 'employee')) DEFAULT 'admin',
-  preferences JSONB DEFAULT '{"darkMode": false}'::jsonb, -- PREFERÊNCIAS DE USUÁRIO (TEMA)
+  preferences JSONB DEFAULT '{"darkMode": false}'::jsonb,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -68,6 +66,13 @@ CREATE TABLE public.payment_methods (
   type TEXT CHECK (type IN ('credit', 'debit', 'pix', 'cash')),
   rates JSONB DEFAULT '{}'::jsonb,
   active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE public.product_sizes (
+  id SERIAL PRIMARY KEY,
+  name TEXT UNIQUE NOT NULL,
+  sort_order INTEGER DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -136,7 +141,6 @@ CREATE TABLE public.venda_itens (
   original_cost DECIMAL(10,2)
 );
 
--- NOVAS TABELAS FINANCEIRAS
 CREATE TABLE public.bank_accounts (
   id SERIAL PRIMARY KEY,
   name TEXT NOT NULL,
@@ -164,8 +168,7 @@ INSERT INTO storage.buckets (id, name, public) VALUES ('store-assets', 'store-as
 DROP POLICY IF EXISTS "Public Access Bucket" ON storage.objects;
 CREATE POLICY "Public Access Bucket" ON storage.objects FOR ALL USING ( bucket_id = 'store-assets' ) WITH CHECK ( bucket_id = 'store-assets' );
 
-
--- 5. SEGURANÇA (RLS PÚBLICO - MODO MULTI-TENANT SIMPLIFICADO)
+-- 5. SEGURANÇA (RLS PÚBLICO)
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Public Access Profiles" ON profiles;
 CREATE POLICY "Public Access Profiles" ON profiles FOR ALL USING (true) WITH CHECK (true);
@@ -206,15 +209,14 @@ ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Public Access Transactions" ON transactions;
 CREATE POLICY "Public Access Transactions" ON transactions FOR ALL USING (true) WITH CHECK (true);
 
+ALTER TABLE product_sizes ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public Access Sizes" ON product_sizes;
+CREATE POLICY "Public Access Sizes" ON product_sizes FOR ALL USING (true) WITH CHECK (true);
+
 -- 6. DADOS INICIAIS
--- Usuário Admin Padrão
--- A senha inicial é Gs020185* para o primeiro acesso, depois o sistema força a troca.
 INSERT INTO profiles (id, username, password, role) 
 VALUES ('00000000-0000-0000-0000-000000000000', 'admin', 'Gs020185*', 'admin') 
 ON CONFLICT (id) DO NOTHING;
-
--- Tenta alterar senha do admin se ele já existir (para garantir reset em instalações sujas)
-UPDATE profiles SET password = 'Gs020185*' WHERE username = 'admin' AND id = '00000000-0000-0000-0000-000000000000';
 
 INSERT INTO store_settings (id, store_name, theme_color) 
 VALUES (1, 'Minha Loja', '#0ea5e9') 
@@ -227,24 +229,45 @@ ON CONFLICT DO NOTHING;
 INSERT INTO bank_accounts (name, balance, is_default, color) 
 VALUES ('Caixa Loja', 0, true, '#10b981') 
 ON CONFLICT DO NOTHING;
+
+INSERT INTO product_sizes (name, sort_order) VALUES
+('RN', 0), ('PB', 1), ('PP', 2), ('P', 3), ('M', 4), ('G', 5), ('GG', 6), ('XG', 7), ('XXG', 8), ('U', 9),
+('1', 10), ('2', 11), ('3', 12), ('4', 13), ('6', 14), ('8', 15), ('10', 16), ('12', 17), ('14', 18), ('16', 19)
+ON CONFLICT (name) DO NOTHING;
 `;
 
-// --- SCRIPT DE CORREÇÃO DE SEQUÊNCIAS ---
 export const fixSequencesSQL = `
--- CORREÇÃO DE IDS DUPLICADOS (Sincronização de Sequências)
--- Copie este bloco inteiro e execute no SQL Editor do Supabase
+-- Correção de Sequências segura para Postgres
+DO $$
+DECLARE
+    r RECORD;
+    seq_name TEXT;
+BEGIN
+    FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+        -- Verifica se a sequência existe antes de tentar atualizar
+        IF EXISTS (
+            SELECT 1 FROM pg_class c 
+            JOIN pg_namespace n ON n.oid = c.relnamespace 
+            WHERE c.relname = r.tablename || '_id_seq' AND n.nspname = 'public'
+        ) THEN
+            EXECUTE format('SELECT setval(pg_get_serial_sequence(%L, %L), COALESCE(MAX(id), 0) + 1, false) FROM %I', 'public.' || r.tablename, 'id', r.tablename);
+        END IF;
+    END LOOP;
+END $$;
 
-SELECT setval(pg_get_serial_sequence('public.vendas', 'id'), COALESCE(MAX(id), 0) + 1, false) FROM public.vendas;
-SELECT setval(pg_get_serial_sequence('public.venda_itens', 'id'), COALESCE(MAX(id), 0) + 1, false) FROM public.venda_itens;
-SELECT setval(pg_get_serial_sequence('public.transactions', 'id'), COALESCE(MAX(id), 0) + 1, false) FROM public.transactions;
-SELECT setval(pg_get_serial_sequence('public.bank_accounts', 'id'), COALESCE(MAX(id), 0) + 1, false) FROM public.bank_accounts;
-SELECT setval(pg_get_serial_sequence('public.payment_methods', 'id'), COALESCE(MAX(id), 0) + 1, false) FROM public.payment_methods;
-SELECT setval(pg_get_serial_sequence('public.store_settings', 'id'), COALESCE(MAX(id), 0) + 1, false) FROM public.store_settings;
-
--- Correção dos Códigos de Venda/Condicional (V0001, C0001...)
-SELECT setval('public.sales_seq', COALESCE((SELECT MAX(NULLIF(regexp_replace(code, '\\D', '', 'g'), '')::int) FROM public.vendas WHERE code LIKE 'V%'), 0) + 1, false);
-SELECT setval('public.quotes_seq', COALESCE((SELECT MAX(NULLIF(regexp_replace(code, '\\D', '', 'g'), '')::int) FROM public.vendas WHERE code LIKE 'C%'), 0) + 1, false);
-SELECT setval('public.losses_seq', COALESCE((SELECT MAX(NULLIF(regexp_replace(code, '\\D', '', 'g'), '')::int) FROM public.vendas WHERE code LIKE 'B%'), 0) + 1, false);
+-- Sequências Personalizadas (Criadas via CREATE SEQUENCE)
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_class WHERE relname = 'sales_seq') THEN
+        PERFORM setval('public.sales_seq', COALESCE((SELECT MAX(NULLIF(regexp_replace(code, '\\D', '', 'g'), '')::int) FROM public.vendas WHERE code LIKE 'V%'), 0) + 1, false);
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_class WHERE relname = 'quotes_seq') THEN
+        PERFORM setval('public.quotes_seq', COALESCE((SELECT MAX(NULLIF(regexp_replace(code, '\\D', '', 'g'), '')::int) FROM public.vendas WHERE code LIKE 'C%'), 0) + 1, false);
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_class WHERE relname = 'losses_seq') THEN
+        PERFORM setval('public.losses_seq', COALESCE((SELECT MAX(NULLIF(regexp_replace(code, '\\D', '', 'g'), '')::int) FROM public.vendas WHERE code LIKE 'B%'), 0) + 1, false);
+    END IF;
+END $$;
 `;
 
 export const migrations: Migration[] = [
@@ -255,33 +278,26 @@ export const migrations: Migration[] = [
         sql: fullInstallScript
     },
     {
-        id: 'add_user_preferences',
-        date: '2025-02-26 10:00',
-        description: 'Adicionar Preferências de Usuário (Tema no DB)',
-        sql: `ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS preferences JSONB DEFAULT '{"darkMode": false}'::jsonb;`
-    },
-    {
-        id: 'ensure_payment_methods',
-        date: '2025-02-26 12:00',
-        description: 'Garantir tabela de métodos de pagamento',
+        id: 'add_product_sizes_table_v5',
+        date: '2025-02-27 17:30',
+        description: 'Tabela de tamanhos dinâmica com dados iniciais incluindo PP.',
         sql: `
-        CREATE TABLE IF NOT EXISTS public.payment_methods (
+        CREATE TABLE IF NOT EXISTS public.product_sizes (
           id SERIAL PRIMARY KEY,
-          name TEXT NOT NULL,
-          type TEXT CHECK (type IN ('credit', 'debit', 'pix', 'cash')),
-          rates JSONB DEFAULT '{}'::jsonb,
-          active BOOLEAN DEFAULT TRUE,
+          name TEXT UNIQUE NOT NULL,
+          sort_order INTEGER DEFAULT 0,
           created_at TIMESTAMPTZ DEFAULT NOW()
         );
-        -- Permissões
-        ALTER TABLE payment_methods ENABLE ROW LEVEL SECURITY;
-        DROP POLICY IF EXISTS "Public Access Payments" ON payment_methods;
-        CREATE POLICY "Public Access Payments" ON payment_methods FOR ALL USING (true) WITH CHECK (true);
-        -- Dados padrão se vazio
-        INSERT INTO payment_methods (name, type, rates) 
-        SELECT 'Dinheiro', 'cash', '{}' WHERE NOT EXISTS (SELECT 1 FROM payment_methods);
-        INSERT INTO payment_methods (name, type, rates) 
-        SELECT 'Pix', 'pix', '{}' WHERE NOT EXISTS (SELECT 1 FROM payment_methods WHERE type='pix');
+        ALTER TABLE public.product_sizes ENABLE ROW LEVEL SECURITY;
+        DROP POLICY IF EXISTS "Public Access Sizes" ON public.product_sizes;
+        CREATE POLICY "Public Access Sizes" ON public.product_sizes FOR ALL USING (true) WITH CHECK (true);
+        
+        -- Inserção forçada dos tamanhos padrão se não existirem
+        INSERT INTO product_sizes (name, sort_order) 
+        VALUES 
+          ('RN', 0), ('PB', 1), ('PP', 2), ('P', 3), ('M', 4), ('G', 5), ('GG', 6), ('XG', 7), ('XXG', 8), ('U', 9),
+          ('1', 10), ('2', 11), ('3', 12), ('4', 13), ('6', 14), ('8', 15), ('10', 16), ('12', 17), ('14', 18), ('16', 19)
+        ON CONFLICT (name) DO NOTHING;
         `
     }
 ];
