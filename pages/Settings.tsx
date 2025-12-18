@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase, resetDatabaseConfig, isUsingEnv } from '../supabaseClient';
-import { migrations, fixSequencesSQL } from '../utils/database.sql';
+import { migrations, fixSequencesSQL, fullInstallScript, patchSizesScript } from '../utils/database.sql';
 import { Profile, PaymentMethod, ProductSize } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { 
@@ -32,17 +32,18 @@ import {
   FileJson,
   Wrench,
   Maximize2,
-  RotateCcw
+  RotateCcw,
+  Database,
+  FileText,
+  Wand2
 } from 'lucide-react';
 
 export const Settings: React.FC = () => {
   const { user } = useAuth();
-  // Se for bootstrap, força aba database
   const [activeTab, setActiveTab] = useState<'general' | 'users' | 'payments' | 'sizes' | 'database'>(user?.isBootstrap ? 'database' : 'general');
   const [loading, setLoading] = useState(false);
   const [syncingSizes, setSyncingSizes] = useState(false);
   
-  // Store Settings State
   const [storeSettings, setStoreSettings] = useState({
     id: 1,
     store_name: '',
@@ -50,19 +51,16 @@ export const Settings: React.FC = () => {
     logo_url: ''
   });
 
-  // Users Tab State
   const [users, setUsers] = useState<Profile[]>([]);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<Profile | null>(null);
   const [userForm, setUserForm] = useState({ username: '', password: '', role: 'employee' });
 
-  // Sizes Tab State
   const [sizes, setSizes] = useState<ProductSize[]>([]);
   const [isSizeModalOpen, setIsSizeModalOpen] = useState(false);
   const [editingSize, setEditingSize] = useState<ProductSize | null>(null);
   const [sizeForm, setSizeForm] = useState({ name: '', sort_order: 0 });
 
-  // Payments Tab State
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [editingMethod, setEditingMethod] = useState<PaymentMethod | null>(null);
@@ -73,10 +71,8 @@ export const Settings: React.FC = () => {
       rates: Record<string, number>;
   }>({ name: '', type: 'credit', active: true, rates: {} });
   
-  // Auxiliary state for Max Installments in modal
   const [maxInstallments, setMaxInstallments] = useState(12);
 
-  // Database Tab State
   const [backupLoading, setBackupLoading] = useState(false);
   const [restoreLoading, setRestoreLoading] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
@@ -84,10 +80,8 @@ export const Settings: React.FC = () => {
   const [copied, setCopied] = useState<string | null>(null);
   const restoreInputRef = useRef<HTMLInputElement>(null);
   
-  // Connection State
   const [dbUrl, setDbUrl] = useState('');
   const [dbKey, setDbKey] = useState('');
-  const [showDbKey, setShowDbKey] = useState(false);
 
   useEffect(() => {
     if (!user?.isBootstrap) {
@@ -102,7 +96,6 @@ export const Settings: React.FC = () => {
   const loadConnectionInfo = () => {
       const localUrl = localStorage.getItem('custom_supabase_url');
       const localKey = localStorage.getItem('custom_supabase_key');
-      
       if (!isUsingEnv && localUrl && localKey) {
           setDbUrl(localUrl);
           setDbKey(localKey);
@@ -131,11 +124,14 @@ export const Settings: React.FC = () => {
 
   const fetchSizes = async () => {
       if(user?.isBootstrap) return;
-      const { data, error } = await supabase.from('product_sizes').select('*').order('sort_order', { ascending: true });
-      if(error) {
-          console.error("Erro ao buscar tamanhos:", error);
+      try {
+          const { data, error } = await supabase.from('product_sizes').select('*').order('sort_order', { ascending: true });
+          if(error) throw error;
+          if(data) setSizes(data);
+      } catch (err: any) {
+          console.warn("Tabela product_sizes não encontrada. Necessário rodar Script de Correção.");
+          setSizes([]);
       }
-      if(data) setSizes(data);
   };
 
   const handleSaveSettings = async () => {
@@ -154,21 +150,14 @@ export const Settings: React.FC = () => {
       if(user?.isBootstrap) return;
       const file = event.target.files?.[0];
       if (!file) return;
-
       setLoading(true);
       try {
           const fileExt = file.name.split('.').pop();
           const fileName = `logo_${Date.now()}.${fileExt}`;
           const filePath = `${fileName}`;
-
-          const { error: uploadError } = await supabase.storage
-              .from('store-assets')
-              .upload(filePath, file);
-
+          const { error: uploadError } = await supabase.storage.from('store-assets').upload(filePath, file);
           if (uploadError) throw uploadError;
-
           const { data } = supabase.storage.from('store-assets').getPublicUrl(filePath);
-          
           setStoreSettings(prev => ({ ...prev, logo_url: data.publicUrl }));
           alert("Logo enviado! Salve para confirmar.");
       } catch (error: any) {
@@ -177,7 +166,6 @@ export const Settings: React.FC = () => {
       setLoading(false);
   };
 
-  // --- USER ACTIONS ---
   const handleOpenUserModal = (user?: Profile) => {
       if (user) {
           setEditingUser(user);
@@ -206,7 +194,6 @@ export const Settings: React.FC = () => {
       fetchUsers();
   };
 
-  // --- SIZE ACTIONS ---
   const handleOpenSizeModal = (size?: ProductSize) => {
       if (size) {
           setEditingSize(size);
@@ -231,9 +218,15 @@ export const Settings: React.FC = () => {
               if (error) throw error;
           }
           setIsSizeModalOpen(false);
+          setSizeForm({ name: '', sort_order: 0 }); // Limpa form
           await fetchSizes();
       } catch (err: any) {
-          alert("Erro ao salvar tamanho: " + (err.message || "Verifique se o nome já existe."));
+          console.error("Erro completo ao salvar tamanho:", err);
+          if (err.message?.includes('product_sizes')) {
+              alert("ERRO: A tabela 'product_sizes' não existe. Vá na aba 'Banco de Dados' e use o 'Script de Correção (Patch)'.");
+          } else {
+              alert("Erro ao salvar: " + err.message);
+          }
       } finally {
           setLoading(false);
       }
@@ -255,82 +248,56 @@ export const Settings: React.FC = () => {
               { name: 'PP', sort_order: 2 }, { name: 'P', sort_order: 3 }, 
               { name: 'M', sort_order: 4 }, { name: 'G', sort_order: 5 }, 
               { name: 'GG', sort_order: 6 }, { name: 'XG', sort_order: 7 }, 
-              { name: 'XXG', sort_order: 8 }, { name: 'U', sort_order: 9 },
-              { name: '1', sort_order: 10 }, { name: '2', sort_order: 11 }, 
-              { name: '3', sort_order: 12 }, { name: '4', sort_order: 13 }, 
-              { name: '6', sort_order: 14 }, { name: '8', sort_order: 15 }, 
-              { name: '10', sort_order: 16 }, { name: '12', sort_order: 17 }, 
-              { name: '14', sort_order: 18 }, { name: '16', sort_order: 19 }
+              { name: 'XXG', sort_order: 8 }, { name: 'U', sort_order: 9 }
           ];
-
-          // Insere um por um para evitar falha total se um já existir
           for (const s of defaults) {
-              await supabase.from('product_sizes').insert(s);
+              await supabase.from('product_sizes').upsert(s, { onConflict: 'name' });
           }
-          
           alert("Tamanhos padrão restaurados!");
           await fetchSizes();
       } catch (e: any) {
-          alert("Erro ao restaurar: " + e.message);
+          alert("Erro: " + e.message + "\n\nCertifique-se de que rodou o SQL de Correção.");
       } finally {
           setSyncingSizes(false);
       }
   };
 
   const handleSyncSizesFromStock = async () => {
-      if(!confirm("Deseja identificar tamanhos que você já usa no estoque e trazê-los para cá?")) return;
+      if(!confirm("Deseja identificar tamanhos que você já usa no estoque?")) return;
       setSyncingSizes(true);
       try {
-          const { data: stockData, error: fetchError } = await supabase
-              .from('estoque_tamanhos')
-              .select('size');
-          
+          const { data: stockData, error: fetchError } = await supabase.from('estoque_tamanhos').select('size');
           if (fetchError) throw fetchError;
-
           if (stockData && stockData.length > 0) {
               const uniqueInStock = Array.from(new Set(stockData.map(s => s.size.trim().toUpperCase())));
-              const { data: existingSizes } = await supabase.from('product_sizes').select('name');
+              const { data: existingSizes, error: sizeErr } = await supabase.from('product_sizes').select('name');
+              if (sizeErr) throw sizeErr;
               const existingNames = (existingSizes || []).map(s => s.name.toUpperCase());
-              
               const toAdd = uniqueInStock.filter(name => !existingNames.includes(name));
-
               if (toAdd.length === 0) {
-                  alert("Todos os tamanhos do estoque já estão configurados ou o estoque está vazio.");
+                  alert("Todos os tamanhos do estoque já estão cadastrados.");
                   return;
               }
-
               let currentOrder = sizes.length > 0 ? Math.max(...sizes.map(s => s.sort_order)) : 0;
-              
-              const payload = toAdd.map(name => ({
-                  name: name,
-                  sort_order: ++currentOrder
-              }));
-
+              const payload = toAdd.map(name => ({ name, sort_order: ++currentOrder }));
               const { error: insertError } = await supabase.from('product_sizes').insert(payload);
               if (insertError) throw insertError;
-
-              alert(`${toAdd.length} tamanhos novos importados do estoque!`);
+              alert(`${toAdd.length} novos tamanhos importados!`);
               await fetchSizes();
           } else {
-              alert("Não há produtos no estoque para identificar tamanhos.");
+              alert("Estoque vazio.");
           }
       } catch (e: any) {
-          alert("Erro ao sincronizar: " + e.message);
+          alert("Erro ao sincronizar: " + e.message + "\n\nSe o erro for 'relation does not exist', use o 'Script de Correção' na aba Banco de Dados.");
       } finally {
           setSyncingSizes(false);
       }
   };
 
-  // --- PAYMENT ACTIONS ---
   const handleOpenPaymentModal = (method?: PaymentMethod) => {
       if (method) {
           setEditingMethod(method);
-          setPaymentForm({
-              name: method.name,
-              type: method.type,
-              active: method.active,
-              rates: method.rates || {}
-          });
+          setPaymentForm({ name: method.name, type: method.type, active: method.active, rates: method.rates || {} });
           const max = Object.keys(method.rates || {}).reduce((a, b) => Math.max(a, parseInt(b)), 1);
           setMaxInstallments(max > 1 ? max : 12);
       } else {
@@ -339,22 +306,6 @@ export const Settings: React.FC = () => {
           setMaxInstallments(12);
       }
       setIsPaymentModalOpen(true);
-  };
-
-  const handleMaxInstallmentsChange = (val: number) => {
-      setMaxInstallments(val);
-      setPaymentForm(prev => {
-          const newRates = { ...prev.rates };
-          for(let i=1; i<=val; i++) { if (newRates[i.toString()] === undefined) newRates[i.toString()] = 0; }
-          Object.keys(newRates).forEach(k => { if (parseInt(k) > val) delete newRates[k]; });
-          return { ...prev, rates: newRates };
-      });
-  };
-
-  const handleRateChange = (installment: string, value: string) => {
-      const numValue = parseFloat(value);
-      if (isNaN(numValue)) return;
-      setPaymentForm(prev => ({ ...prev, rates: { ...prev.rates, [installment]: numValue } }));
   };
 
   const handleSavePaymentMethod = async () => {
@@ -378,7 +329,6 @@ export const Settings: React.FC = () => {
       fetchPaymentMethods();
   };
 
-  // --- DB ACTIONS ---
   const handleFullBackup = async () => {
     setBackupLoading(true);
     setProgress(0);
@@ -428,34 +378,6 @@ export const Settings: React.FC = () => {
       reader.readAsText(file);
   };
 
-  const handleSyncFinancial = async () => {
-    setSyncLoading(true);
-    const { data: sales } = await supabase.from('vendas').select('*').in('status_label', ['Venda', 'Baixa']);
-    if (sales) {
-        const { data: defaultAccount } = await supabase.from('bank_accounts').select('*').eq('is_default', true).single();
-        if (defaultAccount) {
-            let count = 0;
-            for (const sale of sales) {
-                const { data: existing } = await supabase.from('transactions').select('id').ilike('description', `%${sale.code}%`).single();
-                if (!existing) {
-                    const isLoss = sale.status_label === 'Baixa';
-                    await supabase.from('transactions').insert({
-                        description: `${isLoss ? 'Baixa Estoque' : 'Venda'} ${sale.code}`,
-                        amount: sale.total_value,
-                        type: isLoss ? 'expense' : 'income',
-                        account_id: defaultAccount.id,
-                        category: isLoss ? 'Perdas' : 'Vendas',
-                        date: sale.created_at.split('T')[0] 
-                    });
-                    count++;
-                }
-            }
-            alert(`${count} registros sincronizados!`);
-        } else alert("Defina uma conta padrão.");
-    }
-    setSyncLoading(false);
-  };
-
   const copyScript = (sql: string, id: string) => {
       navigator.clipboard.writeText(sql);
       setCopied(id);
@@ -495,18 +417,6 @@ export const Settings: React.FC = () => {
                       <div className="flex items-center gap-2">
                           <input type="color" value={storeSettings.theme_color} onChange={e => setStoreSettings({...storeSettings, theme_color: e.target.value})} className="h-10 w-10 border rounded cursor-pointer" />
                           <input value={storeSettings.theme_color} onChange={e => setStoreSettings({...storeSettings, theme_color: e.target.value})} className="flex-1 p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
-                      </div>
-                  </div>
-                  <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Logotipo</label>
-                      <div className="flex items-center gap-4 p-4 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg">
-                          {storeSettings.logo_url ? <img src={storeSettings.logo_url} className="h-16 w-16 object-contain rounded bg-white p-1 border shadow-sm" /> : <div className="h-16 w-16 rounded bg-slate-100 dark:bg-slate-700 flex items-center justify-center"><ImageIcon size={24} /></div>}
-                          <div className="flex-1">
-                              <label htmlFor="logo-upload" className="cursor-pointer inline-flex items-center px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 rounded-md font-medium text-sm">
-                                  <Upload className="mr-2" size={16} /> Carregar Imagem
-                              </label>
-                              <input id="logo-upload" type="file" accept="image/*" className="hidden" onChange={handleUploadLogo} disabled={loading} />
-                          </div>
                       </div>
                   </div>
                   <div className="pt-2 border-t dark:border-slate-700">
@@ -552,14 +462,14 @@ export const Settings: React.FC = () => {
                       <button 
                         onClick={handleResetSizesToDefault} 
                         disabled={syncingSizes}
-                        className="flex items-center px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-white border border-slate-300 dark:border-slate-600 rounded font-bold text-xs hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                        className="flex items-center px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-white border border-slate-300 dark:border-slate-600 rounded font-bold text-xs hover:bg-slate-200 transition-colors"
                       >
                           <RotateCcw size={14} className="mr-2"/> Restaurar Padrões
                       </button>
                       <button 
                         onClick={handleSyncSizesFromStock} 
                         disabled={syncingSizes}
-                        className="flex items-center px-4 py-2 bg-white dark:bg-slate-700 text-slate-700 dark:text-white border border-slate-300 dark:border-slate-600 rounded font-bold text-xs hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors"
+                        className="flex items-center px-4 py-2 bg-white dark:bg-slate-700 text-slate-700 dark:text-white border border-slate-300 dark:border-slate-600 rounded font-bold text-xs hover:bg-slate-100 transition-colors"
                       >
                           {syncingSizes ? <Loader size={14} className="animate-spin mr-2"/> : <RefreshCw size={14} className="mr-2"/>}
                           Identificar do Estoque
@@ -569,16 +479,15 @@ export const Settings: React.FC = () => {
                       </button>
                   </div>
               </div>
-              <div className="p-4 bg-amber-50 dark:bg-amber-900/10 text-amber-800 dark:text-amber-400 text-[10px] md:text-xs">
-                  Dica: A "Ordem de Exibição" define a posição nas listas (Ex: 0 para RN, 1 para PP, 2 para P...). 
-                  Se você já tem tamanhos no estoque, clique em "Identificar do Estoque" para que eles apareçam nesta lista.
+              <div className="p-4 bg-amber-50 dark:bg-amber-900/10 text-amber-800 dark:text-amber-400 text-xs">
+                  Dica: Se a lista estiver vazia ou der erro ao salvar, execute o <b>Script de Correção (Opção B)</b> na aba Banco de Dados.
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left">
                     <thead className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-sm uppercase">
                         <tr>
                             <th className="p-4">Tamanho</th>
-                            <th className="p-4">Ordem de Exibição</th>
+                            <th className="p-4">Ordem</th>
                             <th className="p-4 text-center">Ações</th>
                         </tr>
                     </thead>
@@ -586,7 +495,7 @@ export const Settings: React.FC = () => {
                         {sizes.length === 0 ? (
                             <tr><td colSpan={3} className="p-12 text-center text-slate-400 text-sm italic">
                                 <AlertOctagon className="mx-auto mb-2 opacity-20" size={48} />
-                                Lista vazia. Clique em "Restaurar Padrões" para começar ou "Novo Tamanho".
+                                Lista vazia. Verifique se executou o SQL de Correção ou clique em "Restaurar Padrões".
                             </td></tr>
                         ) : sizes.map(s => (
                             <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
@@ -594,8 +503,8 @@ export const Settings: React.FC = () => {
                                 <td className="p-4 text-slate-500">{s.sort_order}</td>
                                 <td className="p-4 text-center">
                                     <div className="flex justify-center gap-2">
-                                        <button onClick={() => handleOpenSizeModal(s)} className="p-2 text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Editar"><Edit2 size={16}/></button>
-                                        <button onClick={() => handleDeleteSize(s.id)} className="p-2 text-red-600 hover:bg-red-50 rounded transition-colors" title="Excluir"><Trash2 size={16}/></button>
+                                        <button onClick={() => handleOpenSizeModal(s)} className="p-2 text-blue-600"><Edit2 size={16}/></button>
+                                        <button onClick={() => handleDeleteSize(s.id)} className="p-2 text-red-600"><Trash2 size={16}/></button>
                                     </div>
                                 </td>
                             </tr>
@@ -606,81 +515,61 @@ export const Settings: React.FC = () => {
           </div>
       )}
 
-      {activeTab === 'payments' && !user?.isBootstrap && (
-          <div className="bg-white dark:bg-slate-800 rounded-lg shadow overflow-hidden">
-              <div className="p-4 border-b dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
-                  <h3 className="font-bold dark:text-white flex items-center"><CreditCard className="mr-2" size={20}/> Pagamentos</h3>
-                  <button onClick={() => handleOpenPaymentModal()} className="flex items-center px-4 py-2 bg-primary-600 text-white rounded font-bold text-sm">Novo Pagamento</button>
-              </div>
-              <table className="w-full text-left">
-                  <thead className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-sm">
-                      <tr><th className="p-4">Nome</th><th className="p-4">Tipo</th><th className="p-4 text-center">Ações</th></tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                      {paymentMethods.map(m => (
-                          <tr key={m.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                              <td className="p-4 font-bold dark:text-white">{m.name}</td>
-                              <td className="p-4 capitalize">{m.type}</td>
-                              <td className="p-4 text-center">
-                                  <div className="flex justify-center gap-2">
-                                      <button onClick={() => handleOpenPaymentModal(m)} className="p-2 text-blue-600"><Edit2 size={16}/></button>
-                                      <button onClick={() => handleDeletePaymentMethod(m.id)} className="p-2 text-red-600"><Trash2 size={16}/></button>
-                                  </div>
-                              </td>
-                          </tr>
-                      ))}
-                  </tbody>
-              </table>
-          </div>
-      )}
-
       {activeTab === 'database' && (
           <div className="space-y-8">
-              <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-6">
-                  <h3 className="text-lg font-bold dark:text-white flex items-center mb-4"><Server className="mr-2" size={20}/> Banco de Dados</h3>
-                  {isUsingEnv ? <p className="text-sm text-blue-600">Conexão gerenciada via ambiente.</p> : <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><input className="p-2 border rounded dark:bg-slate-800 dark:text-white text-sm" placeholder="URL" value={dbUrl} onChange={e => setDbUrl(e.target.value)} /><input className="p-2 border rounded dark:bg-slate-800 dark:text-white text-sm" placeholder="Key" type="password" value={dbKey} onChange={e => setDbKey(e.target.value)} /></div>}
-              </div>
-              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6">
-                  <h3 className="text-lg font-bold text-blue-800 dark:text-blue-300 flex items-center mb-4"><Shield className="mr-2" size={20}/> Backup & Segurança</h3>
-                  <div className="flex flex-wrap gap-2">
-                      <button onClick={handleFullBackup} disabled={backupLoading} className="px-6 py-2 bg-blue-600 text-white rounded font-bold">Backup (JSON)</button>
-                      <button onClick={() => restoreInputRef.current?.click()} className="px-6 py-2 bg-amber-500 text-white rounded font-bold">Restaurar</button>
-                      <input type="file" accept=".json" ref={restoreInputRef} className="hidden" onChange={handleRestoreBackup} />
-                      <button onClick={handleSyncFinancial} className="px-6 py-2 bg-slate-200 text-slate-700 rounded font-bold">Sincronizar Financeiro</button>
-                  </div>
-              </div>
-              <div className="space-y-4">
-                  <h3 className="text-lg font-bold dark:text-white">Scripts de Correção</h3>
-                  <div className="bg-white dark:bg-slate-800 p-4 rounded border flex justify-between items-center">
-                      <div><h4 className="font-bold">Corrigir IDs/Sequências</h4><p className="text-xs text-slate-500">Use se houver erro ao salvar registros.</p></div>
-                      <button onClick={() => copyScript(fixSequencesSQL, 'fix_seq')} className="px-4 py-2 bg-slate-100 dark:bg-slate-700 rounded text-sm font-bold">{copied === 'fix_seq' ? 'Copiado!' : 'Copiar SQL'}</button>
-                  </div>
-              </div>
-          </div>
-      )}
-
-      {/* MODAL USUÁRIO */}
-      {isUserModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-sm p-6">
-                  <h3 className="text-lg font-bold dark:text-white mb-4">{editingUser ? 'Editar Usuário' : 'Novo Usuário'}</h3>
-                  <div className="space-y-4">
-                      <input value={userForm.username} onChange={e => setUserForm({...userForm, username: e.target.value})} className="w-full p-2 border rounded dark:bg-slate-700 dark:text-white" placeholder="Login" />
-                      <input value={userForm.password} onChange={e => setUserForm({...userForm, password: e.target.value})} className="w-full p-2 border rounded dark:bg-slate-700 dark:text-white" placeholder="Senha" type="password" />
-                      <select value={userForm.role} onChange={e => setUserForm({...userForm, role: e.target.value as any})} className="w-full p-2 border rounded dark:bg-slate-700 dark:text-white"><option value="admin">Admin</option><option value="employee">Funcionário</option></select>
-                      <div className="flex justify-end gap-2 pt-4">
-                        <button onClick={() => setIsUserModalOpen(false)} className="px-4 py-2">Cancelar</button>
-                        <button onClick={handleSaveUser} className="px-4 py-2 bg-primary-600 text-white rounded">Salvar</button>
+              {/* Opção B - ATUALIZAÇÃO (PATCH) */}
+              <div className="bg-blue-50 dark:bg-blue-900/10 border-2 border-blue-200 dark:border-blue-800 rounded-xl overflow-hidden">
+                  <div className="p-4 bg-blue-100 dark:bg-blue-900/30 flex justify-between items-center">
+                      <div>
+                        <h3 className="font-bold text-blue-900 dark:text-blue-200 flex items-center"><Wand2 className="mr-2" size={20}/> Opção B: Script de Correção (Patch)</h3>
+                        <p className="text-xs text-blue-700 dark:text-blue-400">Use esta opção para adicionar tabelas faltando <b>sem apagar seus dados</b>.</p>
                       </div>
+                      <button onClick={() => copyScript(patchSizesScript, 'patch_sql')} className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-bold shadow flex items-center">
+                          {copied === 'patch_sql' ? <Check size={16} className="mr-2"/> : <Copy size={16} className="mr-2"/>}
+                          {copied === 'patch_sql' ? 'Copiado!' : 'Copiar Patch'}
+                      </button>
+                  </div>
+                  <div className="p-4">
+                      <pre className="bg-slate-900 text-blue-300 p-4 rounded-lg text-xs font-mono overflow-auto max-h-40 border border-slate-700">
+                          {patchSizesScript}
+                      </pre>
+                  </div>
+              </div>
+
+              {/* Opção A - INSTALAÇÃO COMPLETA */}
+              <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                  <div className="p-4 border-b dark:border-slate-700 flex justify-between items-center bg-slate-100 dark:bg-slate-900/50">
+                      <div>
+                        <h3 className="font-bold dark:text-white flex items-center"><Database className="mr-2" size={20}/> Opção A: Script de Instalação Completa</h3>
+                        <p className="text-xs text-red-600 font-bold uppercase">Atenção: Este script APAGA TUDO e reinstala do zero!</p>
+                      </div>
+                      <button onClick={() => copyScript(fullInstallScript, 'full_sql')} className="px-4 py-2 bg-slate-800 text-white rounded text-sm font-bold shadow flex items-center">
+                          {copied === 'full_sql' ? <Check size={16} className="mr-2"/> : <Copy size={16} className="mr-2"/>}
+                          {copied === 'full_sql' ? 'Copiado!' : 'Copiar SQL Completo'}
+                      </button>
+                  </div>
+                  <div className="p-4">
+                      <pre className="bg-slate-900 text-green-400 p-4 rounded-lg text-xs font-mono overflow-auto max-h-40 border border-slate-700">
+                          {fullInstallScript}
+                      </pre>
+                  </div>
+              </div>
+
+              {/* OUTRAS AÇÕES */}
+              <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow border dark:border-slate-700">
+                  <h3 className="text-lg font-bold dark:text-white flex items-center mb-4"><Shield className="mr-2 text-primary-500" size={20}/> Backup & Segurança</h3>
+                  <div className="flex flex-wrap gap-2">
+                      <button onClick={handleFullBackup} disabled={backupLoading} className="px-6 py-2 bg-blue-600 text-white rounded font-bold shadow hover:bg-blue-700">Baixar Backup (JSON)</button>
+                      <button onClick={() => restoreInputRef.current?.click()} className="px-6 py-2 bg-amber-500 text-white rounded font-bold shadow hover:bg-amber-600">Restaurar do Arquivo</button>
+                      <input type="file" accept=".json" ref={restoreInputRef} className="hidden" onChange={handleRestoreBackup} />
                   </div>
               </div>
           </div>
       )}
 
-      {/* MODAL TAMANHO */}
       {isSizeModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden border dark:border-slate-700">
                   <div className="p-6 border-b dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
                       <h3 className="text-lg font-bold dark:text-white">
                           {editingSize ? 'Editar Tamanho' : 'Novo Tamanho'}
@@ -693,7 +582,7 @@ export const Settings: React.FC = () => {
                           <input 
                               value={sizeForm.name}
                               onChange={e => setSizeForm({...sizeForm, name: e.target.value.toUpperCase()})}
-                              className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold"
+                              className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold uppercase"
                               autoFocus
                               disabled={loading}
                           />
@@ -707,35 +596,17 @@ export const Settings: React.FC = () => {
                               className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                               disabled={loading}
                           />
-                          <p className="text-[10px] text-slate-500 mt-1">Quanto menor o número, mais ao início da lista ele aparece.</p>
                       </div>
-                      <div className="flex justify-end gap-2 pt-4">
+                      <div className="flex justify-end gap-2 pt-4 border-t dark:border-slate-700">
                         <button onClick={() => setIsSizeModalOpen(false)} disabled={loading} className="px-4 py-2 text-slate-500">Cancelar</button>
                         <button 
                             onClick={handleSaveSize} 
                             disabled={loading}
-                            className="px-6 py-2 bg-primary-600 text-white rounded font-bold shadow-lg flex items-center"
+                            className="px-6 py-2 bg-primary-600 text-white rounded font-bold shadow-lg flex items-center hover:bg-primary-700"
                         >
                             {loading ? <Loader className="animate-spin mr-2" size={16}/> : <Save className="mr-2" size={16}/>}
                             Salvar
                         </button>
-                      </div>
-                  </div>
-              </div>
-          </div>
-      )}
-
-      {/* MODAL PAGAMENTO */}
-      {isPaymentModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-lg p-6">
-                  <h3 className="text-lg font-bold dark:text-white mb-4">Pagamento</h3>
-                  <div className="space-y-4">
-                      <input value={paymentForm.name} onChange={e => setPaymentForm({...paymentForm, name: e.target.value})} className="w-full p-2 border rounded dark:bg-slate-700 dark:text-white" placeholder="Nome" />
-                      <select value={paymentForm.type} onChange={e => setPaymentForm({...paymentForm, type: e.target.value as any})} className="w-full p-2 border rounded dark:bg-slate-700 dark:text-white"><option value="credit">Crédito</option><option value="debit">Débito</option><option value="pix">Pix</option><option value="cash">Dinheiro</option></select>
-                      <div className="flex justify-end gap-2 pt-4">
-                        <button onClick={() => setIsPaymentModalOpen(false)} className="px-4 py-2">Cancelar</button>
-                        <button onClick={handleSavePaymentMethod} className="px-4 py-2 bg-primary-600 text-white rounded">Salvar</button>
                       </div>
                   </div>
               </div>

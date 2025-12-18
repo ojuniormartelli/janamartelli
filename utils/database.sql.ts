@@ -6,12 +6,11 @@ export interface Migration {
     sql: string;
 }
 
-const fullInstallScript = `
--- =================================================================
--- INSTALAÇÃO COMPLETA (SUPABASE / POSTGRES)
+// 1. SCRIPT PARA INSTALAÇÃO DO ZERO (APAGA TUDO)
+export const fullInstallScript = `-- =================================================================
+-- OPÇÃO A: INSTALAÇÃO COMPLETA (DO ZERO - APAGA TUDO!)
 -- =================================================================
 
--- 1. LIMPEZA (DROP)
 DROP TABLE IF EXISTS public.transactions CASCADE;
 DROP TABLE IF EXISTS public.bank_accounts CASCADE;
 DROP TABLE IF EXISTS public.venda_itens CASCADE;
@@ -28,10 +27,8 @@ DROP SEQUENCE IF EXISTS public.quotes_seq;
 DROP SEQUENCE IF EXISTS public.losses_seq;
 DROP FUNCTION IF EXISTS public.get_next_code;
 
--- 2. EXTENSÕES
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- 3. TABELAS
 CREATE TABLE public.profiles (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
   username TEXT UNIQUE NOT NULL,
@@ -50,13 +47,10 @@ CREATE TABLE public.store_settings (
   payment_config JSONB DEFAULT '[]'::jsonb
 );
 
-CREATE TABLE public.clients (
-  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-  full_name TEXT NOT NULL,
-  cpf TEXT,
-  phone TEXT,
-  email TEXT,
-  address TEXT,
+CREATE TABLE public.product_sizes (
+  id SERIAL PRIMARY KEY,
+  name TEXT UNIQUE NOT NULL,
+  sort_order INTEGER DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -66,13 +60,6 @@ CREATE TABLE public.payment_methods (
   type TEXT CHECK (type IN ('credit', 'debit', 'pix', 'cash')),
   rates JSONB DEFAULT '{}'::jsonb,
   active BOOLEAN DEFAULT TRUE,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE public.product_sizes (
-  id SERIAL PRIMARY KEY,
-  name TEXT UNIQUE NOT NULL,
-  sort_order INTEGER DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -97,6 +84,16 @@ CREATE TABLE public.estoque_tamanhos (
   sku TEXT,
   reference TEXT,
   CONSTRAINT unique_variant_size UNIQUE (product_id, model_variant, size)
+);
+
+CREATE TABLE public.clients (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  full_name TEXT NOT NULL,
+  cpf TEXT,
+  phone TEXT,
+  email TEXT,
+  address TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE SEQUENCE public.sales_seq START 1;
@@ -162,89 +159,87 @@ CREATE TABLE public.transactions (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 4. STORAGE (IMAGENS)
-INSERT INTO storage.buckets (id, name, public) VALUES ('store-assets', 'store-assets', true) ON CONFLICT (id) DO NOTHING;
-
-DROP POLICY IF EXISTS "Public Access Bucket" ON storage.objects;
-CREATE POLICY "Public Access Bucket" ON storage.objects FOR ALL USING ( bucket_id = 'store-assets' ) WITH CHECK ( bucket_id = 'store-assets' );
-
--- 5. SEGURANÇA (RLS PÚBLICO)
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Public Access Profiles" ON profiles;
 CREATE POLICY "Public Access Profiles" ON profiles FOR ALL USING (true) WITH CHECK (true);
-
 ALTER TABLE clients ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Public Access Clients" ON clients;
 CREATE POLICY "Public Access Clients" ON clients FOR ALL USING (true) WITH CHECK (true);
-
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Public Access Products" ON products;
 CREATE POLICY "Public Access Products" ON products FOR ALL USING (true) WITH CHECK (true);
-
 ALTER TABLE estoque_tamanhos ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Public Access Stock" ON estoque_tamanhos;
 CREATE POLICY "Public Access Stock" ON estoque_tamanhos FOR ALL USING (true) WITH CHECK (true);
-
 ALTER TABLE vendas ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Public Access Sales" ON vendas;
 CREATE POLICY "Public Access Sales" ON vendas FOR ALL USING (true) WITH CHECK (true);
-
 ALTER TABLE venda_itens ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Public Access Items" ON venda_itens;
 CREATE POLICY "Public Access Items" ON venda_itens FOR ALL USING (true) WITH CHECK (true);
-
 ALTER TABLE payment_methods ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Public Access Payments" ON payment_methods;
 CREATE POLICY "Public Access Payments" ON payment_methods FOR ALL USING (true) WITH CHECK (true);
-
 ALTER TABLE store_settings ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Public Access Settings" ON store_settings;
 CREATE POLICY "Public Access Settings" ON store_settings FOR ALL USING (true) WITH CHECK (true);
-
 ALTER TABLE bank_accounts ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Public Access Accounts" ON bank_accounts;
 CREATE POLICY "Public Access Accounts" ON bank_accounts FOR ALL USING (true) WITH CHECK (true);
-
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Public Access Transactions" ON transactions;
 CREATE POLICY "Public Access Transactions" ON transactions FOR ALL USING (true) WITH CHECK (true);
-
 ALTER TABLE product_sizes ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Public Access Sizes" ON product_sizes;
 CREATE POLICY "Public Access Sizes" ON product_sizes FOR ALL USING (true) WITH CHECK (true);
 
--- 6. DADOS INICIAIS
-INSERT INTO profiles (id, username, password, role) 
-VALUES ('00000000-0000-0000-0000-000000000000', 'admin', 'Gs020185*', 'admin') 
-ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO store_settings (id, store_name, theme_color) 
-VALUES (1, 'Minha Loja', '#0ea5e9') 
-ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO payment_methods (name, type, rates) VALUES 
-('Dinheiro', 'cash', '{}'), ('Pix', 'pix', '{}'), ('Débito', 'debit', '{"1": 1.5}'), ('Crédito', 'credit', '{"1": 3.0}') 
-ON CONFLICT DO NOTHING;
-
-INSERT INTO bank_accounts (name, balance, is_default, color) 
-VALUES ('Caixa Loja', 0, true, '#10b981') 
-ON CONFLICT DO NOTHING;
+INSERT INTO profiles (id, username, password, role) VALUES ('00000000-0000-0000-0000-000000000000', 'admin', 'Gs020185*', 'admin') ON CONFLICT (id) DO NOTHING;
+INSERT INTO store_settings (id, store_name, theme_color) VALUES (1, 'Minha Loja', '#0ea5e9') ON CONFLICT (id) DO NOTHING;
+INSERT INTO payment_methods (name, type, rates) VALUES ('Dinheiro', 'cash', '{}'), ('Pix', 'pix', '{}'), ('Débito', 'debit', '{"1": 1.5}'), ('Crédito', 'credit', '{"1": 3.0}') ON CONFLICT DO NOTHING;
+INSERT INTO bank_accounts (name, balance, is_default, color) VALUES ('Caixa Loja', 0, true, '#10b981') ON CONFLICT DO NOTHING;
 
 INSERT INTO product_sizes (name, sort_order) VALUES
 ('RN', 0), ('PB', 1), ('PP', 2), ('P', 3), ('M', 4), ('G', 5), ('GG', 6), ('XG', 7), ('XXG', 8), ('U', 9),
 ('1', 10), ('2', 11), ('3', 12), ('4', 13), ('6', 14), ('8', 15), ('10', 16), ('12', 17), ('14', 18), ('16', 19)
 ON CONFLICT (name) DO NOTHING;
+
+NOTIFY pgrst, 'reload schema';
 `;
 
-export const fixSequencesSQL = `
--- Correção de Sequências segura para Postgres
+// 2. SCRIPT DE CORREÇÃO (APENAS CRIA A TABELA DE TAMANHOS SEM APAGAR NADA)
+export const patchSizesScript = `-- =================================================================
+-- OPÇÃO B: APENAS ATUALIZAR (NÃO APAGA SEUS DADOS!)
+-- Use este script se o sistema der erro de 'table not found' em Tamanhos.
+-- =================================================================
+
+-- 1. Criar a tabela se ela não existir
+CREATE TABLE IF NOT EXISTS public.product_sizes (
+  id SERIAL PRIMARY KEY,
+  name TEXT UNIQUE NOT NULL,
+  sort_order INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 2. Habilitar segurança (RLS)
+ALTER TABLE public.product_sizes ENABLE ROW LEVEL SECURITY;
+
+-- 3. Criar política de acesso público
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE tablename = 'product_sizes' AND policyname = 'Public Access Sizes'
+    ) THEN
+        CREATE POLICY "Public Access Sizes" ON public.product_sizes FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+END $$;
+
+-- 4. Popular com os tamanhos padrão (não sobrescreve se já existir)
+INSERT INTO public.product_sizes (name, sort_order) VALUES
+('RN', 0), ('PB', 1), ('PP', 2), ('P', 3), ('M', 4), ('G', 5), ('GG', 6), ('XG', 7), ('XXG', 8), ('U', 9),
+('1', 10), ('2', 11), ('3', 12), ('4', 13), ('6', 14), ('8', 15), ('10', 16), ('12', 17), ('14', 18), ('16', 19)
+ON CONFLICT (name) DO NOTHING;
+
+-- 5. Recarregar cache do Supabase para reconhecer a nova tabela
+NOTIFY pgrst, 'reload schema';
+`;
+
+export const fixSequencesSQL = `-- Correção de Sequências segura para Postgres
 DO $$
 DECLARE
     r RECORD;
     seq_name TEXT;
 BEGIN
     FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
-        -- Verifica se a sequência existe antes de tentar atualizar
         IF EXISTS (
             SELECT 1 FROM pg_class c 
             JOIN pg_namespace n ON n.oid = c.relnamespace 
@@ -258,26 +253,10 @@ END $$;
 
 export const migrations: Migration[] = [
     {
-        id: 'install_supabase_v5_secure',
-        date: '2025-02-25 18:30',
-        description: 'Instalação Completa (Supabase) - Admin Seguro',
+        id: 'install_supabase_v7_complete',
+        date: '2025-02-27 19:00',
+        description: 'Instalação Completa (Supabase) - Todas as tabelas incluindo Tamanhos',
         sql: fullInstallScript
-    },
-    {
-        id: 'add_product_sizes_table_v6',
-        date: '2025-02-27 18:00',
-        description: 'Reforço da tabela de tamanhos e RLS.',
-        sql: `
-        CREATE TABLE IF NOT EXISTS public.product_sizes (
-          id SERIAL PRIMARY KEY,
-          name TEXT UNIQUE NOT NULL,
-          sort_order INTEGER DEFAULT 0,
-          created_at TIMESTAMPTZ DEFAULT NOW()
-        );
-        ALTER TABLE public.product_sizes ENABLE ROW LEVEL SECURITY;
-        DROP POLICY IF EXISTS "Public Access Sizes" ON public.product_sizes;
-        CREATE POLICY "Public Access Sizes" ON public.product_sizes FOR ALL USING (true) WITH CHECK (true);
-        `
     }
 ];
 
