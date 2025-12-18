@@ -31,7 +31,8 @@ import {
   Layers,
   FileJson,
   Wrench,
-  Maximize2
+  Maximize2,
+  RotateCcw
 } from 'lucide-react';
 
 export const Settings: React.FC = () => {
@@ -130,7 +131,10 @@ export const Settings: React.FC = () => {
 
   const fetchSizes = async () => {
       if(user?.isBootstrap) return;
-      const { data } = await supabase.from('product_sizes').select('*').order('sort_order', { ascending: true });
+      const { data, error } = await supabase.from('product_sizes').select('*').order('sort_order', { ascending: true });
+      if(error) {
+          console.error("Erro ao buscar tamanhos:", error);
+      }
       if(data) setSizes(data);
   };
 
@@ -209,7 +213,6 @@ export const Settings: React.FC = () => {
           setSizeForm({ name: size.name, sort_order: size.sort_order });
       } else {
           setEditingSize(null);
-          // Auto-increment sort_order
           const lastOrder = sizes.length > 0 ? Math.max(...sizes.map(s => s.sort_order)) : 0;
           setSizeForm({ name: '', sort_order: lastOrder + 1 });
       }
@@ -218,14 +221,22 @@ export const Settings: React.FC = () => {
 
   const handleSaveSize = async () => {
       if(!sizeForm.name) return alert("Nome é obrigatório");
-      if (editingSize) {
-          await supabase.from('product_sizes').update(sizeForm).eq('id', editingSize.id);
-      } else {
-          const { error } = await supabase.from('product_sizes').insert(sizeForm);
-          if (error) return alert("Erro ao criar (Nome já existe?)");
+      setLoading(true);
+      try {
+          if (editingSize) {
+              const { error } = await supabase.from('product_sizes').update(sizeForm).eq('id', editingSize.id);
+              if (error) throw error;
+          } else {
+              const { error } = await supabase.from('product_sizes').insert(sizeForm);
+              if (error) throw error;
+          }
+          setIsSizeModalOpen(false);
+          await fetchSizes();
+      } catch (err: any) {
+          alert("Erro ao salvar tamanho: " + (err.message || "Verifique se o nome já existe."));
+      } finally {
+          setLoading(false);
       }
-      setIsSizeModalOpen(false);
-      fetchSizes();
   };
 
   const handleDeleteSize = async (id: number) => {
@@ -235,22 +246,49 @@ export const Settings: React.FC = () => {
       else fetchSizes();
   };
 
-  // FUNÇÃO DE SINCRONIZAÇÃO COM O ESTOQUE
+  const handleResetSizesToDefault = async () => {
+      if (!confirm("Isso irá resetar a lista para os tamanhos padrão (RN, PP, P, M, G, etc). Deseja continuar?")) return;
+      setSyncingSizes(true);
+      try {
+          const defaults = [
+              { name: 'RN', sort_order: 0 }, { name: 'PB', sort_order: 1 }, 
+              { name: 'PP', sort_order: 2 }, { name: 'P', sort_order: 3 }, 
+              { name: 'M', sort_order: 4 }, { name: 'G', sort_order: 5 }, 
+              { name: 'GG', sort_order: 6 }, { name: 'XG', sort_order: 7 }, 
+              { name: 'XXG', sort_order: 8 }, { name: 'U', sort_order: 9 },
+              { name: '1', sort_order: 10 }, { name: '2', sort_order: 11 }, 
+              { name: '3', sort_order: 12 }, { name: '4', sort_order: 13 }, 
+              { name: '6', sort_order: 14 }, { name: '8', sort_order: 15 }, 
+              { name: '10', sort_order: 16 }, { name: '12', sort_order: 17 }, 
+              { name: '14', sort_order: 18 }, { name: '16', sort_order: 19 }
+          ];
+
+          // Insere um por um para evitar falha total se um já existir
+          for (const s of defaults) {
+              await supabase.from('product_sizes').insert(s);
+          }
+          
+          alert("Tamanhos padrão restaurados!");
+          await fetchSizes();
+      } catch (e: any) {
+          alert("Erro ao restaurar: " + e.message);
+      } finally {
+          setSyncingSizes(false);
+      }
+  };
+
   const handleSyncSizesFromStock = async () => {
       if(!confirm("Deseja identificar tamanhos que você já usa no estoque e trazê-los para cá?")) return;
       setSyncingSizes(true);
       try {
-          // 1. Busca todos os tamanhos únicos usados no estoque
           const { data: stockData, error: fetchError } = await supabase
               .from('estoque_tamanhos')
               .select('size');
           
           if (fetchError) throw fetchError;
 
-          if (stockData) {
+          if (stockData && stockData.length > 0) {
               const uniqueInStock = Array.from(new Set(stockData.map(s => s.size.trim().toUpperCase())));
-              
-              // 2. Busca o que já temos em product_sizes para não duplicar
               const { data: existingSizes } = await supabase.from('product_sizes').select('name');
               const existingNames = (existingSizes || []).map(s => s.name.toUpperCase());
               
@@ -261,7 +299,6 @@ export const Settings: React.FC = () => {
                   return;
               }
 
-              // Pega a última ordem para continuar de onde parou
               let currentOrder = sizes.length > 0 ? Math.max(...sizes.map(s => s.sort_order)) : 0;
               
               const payload = toAdd.map(name => ({
@@ -273,7 +310,9 @@ export const Settings: React.FC = () => {
               if (insertError) throw insertError;
 
               alert(`${toAdd.length} tamanhos novos importados do estoque!`);
-              fetchSizes();
+              await fetchSizes();
+          } else {
+              alert("Não há produtos no estoque para identificar tamanhos.");
           }
       } catch (e: any) {
           alert("Erro ao sincronizar: " + e.message);
@@ -509,11 +548,18 @@ export const Settings: React.FC = () => {
           <div className="bg-white dark:bg-slate-800 rounded-lg shadow overflow-hidden">
               <div className="p-4 border-b dark:border-slate-700 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-slate-50 dark:bg-slate-900/50">
                   <h3 className="font-bold dark:text-white flex items-center"><Maximize2 className="mr-2" size={20}/> Gerenciar Tamanhos</h3>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap">
+                      <button 
+                        onClick={handleResetSizesToDefault} 
+                        disabled={syncingSizes}
+                        className="flex items-center px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-white border border-slate-300 dark:border-slate-600 rounded font-bold text-xs hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                      >
+                          <RotateCcw size={14} className="mr-2"/> Restaurar Padrões
+                      </button>
                       <button 
                         onClick={handleSyncSizesFromStock} 
                         disabled={syncingSizes}
-                        className="flex items-center px-4 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded font-bold text-xs hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors"
+                        className="flex items-center px-4 py-2 bg-white dark:bg-slate-700 text-slate-700 dark:text-white border border-slate-300 dark:border-slate-600 rounded font-bold text-xs hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors"
                       >
                           {syncingSizes ? <Loader size={14} className="animate-spin mr-2"/> : <RefreshCw size={14} className="mr-2"/>}
                           Identificar do Estoque
@@ -525,7 +571,7 @@ export const Settings: React.FC = () => {
               </div>
               <div className="p-4 bg-amber-50 dark:bg-amber-900/10 text-amber-800 dark:text-amber-400 text-[10px] md:text-xs">
                   Dica: A "Ordem de Exibição" define a posição nas listas (Ex: 0 para RN, 1 para PP, 2 para P...). 
-                  Novos tamanhos criados via "Identificar do Estoque" podem precisar de ajuste na ordem.
+                  Se você já tem tamanhos no estoque, clique em "Identificar do Estoque" para que eles apareçam nesta lista.
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left">
@@ -540,7 +586,7 @@ export const Settings: React.FC = () => {
                         {sizes.length === 0 ? (
                             <tr><td colSpan={3} className="p-12 text-center text-slate-400 text-sm italic">
                                 <AlertOctagon className="mx-auto mb-2 opacity-20" size={48} />
-                                Lista vazia. Clique em "Identificar do Estoque" para importar o que já existe ou use "Novo Tamanho".
+                                Lista vazia. Clique em "Restaurar Padrões" para começar ou "Novo Tamanho".
                             </td></tr>
                         ) : sizes.map(s => (
                             <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
@@ -548,8 +594,8 @@ export const Settings: React.FC = () => {
                                 <td className="p-4 text-slate-500">{s.sort_order}</td>
                                 <td className="p-4 text-center">
                                     <div className="flex justify-center gap-2">
-                                        <button onClick={() => handleOpenSizeModal(s)} className="p-2 text-blue-600 hover:bg-blue-50 rounded transition-colors"><Edit2 size={16}/></button>
-                                        <button onClick={() => handleDeleteSize(s.id)} className="p-2 text-red-600 hover:bg-red-50 rounded transition-colors"><Trash2 size={16}/></button>
+                                        <button onClick={() => handleOpenSizeModal(s)} className="p-2 text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Editar"><Edit2 size={16}/></button>
+                                        <button onClick={() => handleDeleteSize(s.id)} className="p-2 text-red-600 hover:bg-red-50 rounded transition-colors" title="Excluir"><Trash2 size={16}/></button>
                                     </div>
                                 </td>
                             </tr>
@@ -616,7 +662,7 @@ export const Settings: React.FC = () => {
       {/* MODAL USUÁRIO */}
       {isUserModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-sm p-6">
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-sm p-6">
                   <h3 className="text-lg font-bold dark:text-white mb-4">{editingUser ? 'Editar Usuário' : 'Novo Usuário'}</h3>
                   <div className="space-y-4">
                       <input value={userForm.username} onChange={e => setUserForm({...userForm, username: e.target.value})} className="w-full p-2 border rounded dark:bg-slate-700 dark:text-white" placeholder="Login" />
@@ -639,7 +685,7 @@ export const Settings: React.FC = () => {
                       <h3 className="text-lg font-bold dark:text-white">
                           {editingSize ? 'Editar Tamanho' : 'Novo Tamanho'}
                       </h3>
-                      <button onClick={() => setIsSizeModalOpen(false)}><X size={20} className="text-slate-400"/></button>
+                      <button onClick={() => setIsSizeModalOpen(false)} disabled={loading}><X size={20} className="text-slate-400"/></button>
                   </div>
                   <div className="p-6 space-y-4">
                       <div>
@@ -649,6 +695,7 @@ export const Settings: React.FC = () => {
                               onChange={e => setSizeForm({...sizeForm, name: e.target.value.toUpperCase()})}
                               className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold"
                               autoFocus
+                              disabled={loading}
                           />
                       </div>
                       <div>
@@ -656,14 +703,22 @@ export const Settings: React.FC = () => {
                           <input 
                               type="number"
                               value={sizeForm.sort_order}
-                              onChange={e => setSizeForm({...sizeForm, sort_order: parseInt(e.target.value)})}
+                              onChange={e => setSizeForm({...sizeForm, sort_order: parseInt(e.target.value) || 0})}
                               className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                              disabled={loading}
                           />
                           <p className="text-[10px] text-slate-500 mt-1">Quanto menor o número, mais ao início da lista ele aparece.</p>
                       </div>
                       <div className="flex justify-end gap-2 pt-4">
-                        <button onClick={() => setIsSizeModalOpen(false)} className="px-4 py-2 text-slate-500">Cancelar</button>
-                        <button onClick={handleSaveSize} className="px-6 py-2 bg-primary-600 text-white rounded font-bold shadow-lg">Salvar</button>
+                        <button onClick={() => setIsSizeModalOpen(false)} disabled={loading} className="px-4 py-2 text-slate-500">Cancelar</button>
+                        <button 
+                            onClick={handleSaveSize} 
+                            disabled={loading}
+                            className="px-6 py-2 bg-primary-600 text-white rounded font-bold shadow-lg flex items-center"
+                        >
+                            {loading ? <Loader className="animate-spin mr-2" size={16}/> : <Save className="mr-2" size={16}/>}
+                            Salvar
+                        </button>
                       </div>
                   </div>
               </div>

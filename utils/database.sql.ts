@@ -254,20 +254,6 @@ BEGIN
         END IF;
     END LOOP;
 END $$;
-
--- Sequências Personalizadas (Criadas via CREATE SEQUENCE)
-DO $$
-BEGIN
-    IF EXISTS (SELECT 1 FROM pg_class WHERE relname = 'sales_seq') THEN
-        PERFORM setval('public.sales_seq', COALESCE((SELECT MAX(NULLIF(regexp_replace(code, '\\D', '', 'g'), '')::int) FROM public.vendas WHERE code LIKE 'V%'), 0) + 1, false);
-    END IF;
-    IF EXISTS (SELECT 1 FROM pg_class WHERE relname = 'quotes_seq') THEN
-        PERFORM setval('public.quotes_seq', COALESCE((SELECT MAX(NULLIF(regexp_replace(code, '\\D', '', 'g'), '')::int) FROM public.vendas WHERE code LIKE 'C%'), 0) + 1, false);
-    END IF;
-    IF EXISTS (SELECT 1 FROM pg_class WHERE relname = 'losses_seq') THEN
-        PERFORM setval('public.losses_seq', COALESCE((SELECT MAX(NULLIF(regexp_replace(code, '\\D', '', 'g'), '')::int) FROM public.vendas WHERE code LIKE 'B%'), 0) + 1, false);
-    END IF;
-END $$;
 `;
 
 export const migrations: Migration[] = [
@@ -278,9 +264,9 @@ export const migrations: Migration[] = [
         sql: fullInstallScript
     },
     {
-        id: 'add_product_sizes_table_v5',
-        date: '2025-02-27 17:30',
-        description: 'Tabela de tamanhos dinâmica com dados iniciais incluindo PP.',
+        id: 'add_product_sizes_table_v6',
+        date: '2025-02-27 18:00',
+        description: 'Reforço da tabela de tamanhos e RLS.',
         sql: `
         CREATE TABLE IF NOT EXISTS public.product_sizes (
           id SERIAL PRIMARY KEY,
@@ -291,13 +277,6 @@ export const migrations: Migration[] = [
         ALTER TABLE public.product_sizes ENABLE ROW LEVEL SECURITY;
         DROP POLICY IF EXISTS "Public Access Sizes" ON public.product_sizes;
         CREATE POLICY "Public Access Sizes" ON public.product_sizes FOR ALL USING (true) WITH CHECK (true);
-        
-        -- Inserção forçada dos tamanhos padrão se não existirem
-        INSERT INTO product_sizes (name, sort_order) 
-        VALUES 
-          ('RN', 0), ('PB', 1), ('PP', 2), ('P', 3), ('M', 4), ('G', 5), ('GG', 6), ('XG', 7), ('XXG', 8), ('U', 9),
-          ('1', 10), ('2', 11), ('3', 12), ('4', 13), ('6', 14), ('8', 15), ('10', 16), ('12', 17), ('14', 18), ('16', 19)
-        ON CONFLICT (name) DO NOTHING;
         `
     }
 ];
