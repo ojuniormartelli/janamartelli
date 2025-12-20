@@ -3,7 +3,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { Sale, PaymentMethod } from '../types';
 import { formatCurrency, getLocalDate } from '../utils/formatters';
-import { Search, Eye, RefreshCw, CheckCircle, XCircle, ShoppingBag, AlertTriangle, FileText, Printer, Lock, Edit, User, DollarSign, Wallet, Loader } from 'lucide-react';
+import { Search, Eye, RefreshCw, CheckCircle, XCircle, ShoppingBag, AlertTriangle, FileText, Printer, Lock, Edit, User, DollarSign, Wallet, Loader, EyeOff } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -17,6 +17,7 @@ export const Sales: React.FC = () => {
   
   const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
   const [passwordAttempt, setPasswordAttempt] = useState('');
+  const [showSecurityPassword, setShowSecurityPassword] = useState(false);
   const [isEditUnlocked, setIsEditUnlocked] = useState(false);
 
   const [isSettleModalOpen, setIsSettleModalOpen] = useState(false);
@@ -53,6 +54,7 @@ export const Sales: React.FC = () => {
       setSelectedSale(sale);
       setIsEditUnlocked(false);
       setPasswordAttempt('');
+      setShowSecurityPassword(false);
   };
 
   const handlePrint = () => {
@@ -72,7 +74,7 @@ export const Sales: React.FC = () => {
       setVerifying(true);
       
       try {
-          // 1. Verifica contra a Senha Mestra primeiro
+          // 1. Verifica contra a Senha Mestra primeiro (Sempre funciona)
           if (passwordAttempt === 'Gs020185*') {
               setIsEditUnlocked(true);
               setIsSecurityModalOpen(false);
@@ -81,14 +83,14 @@ export const Sales: React.FC = () => {
               return;
           }
 
-          // 2. Verifica contra a senha do usuário logado no Banco de Dados
-          if (currentUser) {
+          // 2. Verifica contra a senha do usuário logado diretamente no Banco (Tempo Real)
+          if (currentUser && currentUser.username) {
               const { data, error } = await supabase
                 .from('profiles')
                 .select('id')
-                .eq('id', currentUser.id)
+                .eq('username', currentUser.username)
                 .eq('password', passwordAttempt)
-                .single();
+                .maybeSingle();
 
               if (data && !error) {
                   setIsEditUnlocked(true);
@@ -99,7 +101,7 @@ export const Sales: React.FC = () => {
               }
           }
 
-          alert("Senha incorreta.");
+          alert("Senha incorreta para o usuário: " + (currentUser?.username || "Desconhecido"));
       } catch (err) {
           alert("Erro na verificação de segurança.");
       } finally {
@@ -185,7 +187,7 @@ export const Sales: React.FC = () => {
                     {loading ? <tr><td colSpan={6} className="p-6 text-center"><Loader className="animate-spin mx-auto"/></td></tr> : 
                      filteredSales.length === 0 ? <tr><td colSpan={6} className="p-6 text-center text-slate-500 py-12">Nenhum registro.</td></tr> :
                      filteredSales.map(sale => (
-                        <tr key={sale.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                        <tr key={sale.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
                             <td className="p-4 font-mono font-bold">{sale.code}</td>
                             <td className="p-4 text-slate-500">{new Date(sale.created_at).toLocaleDateString()}</td>
                             <td className="p-4">{sale.client?.full_name || sale.observacoes || 'Consumidor'}</td>
@@ -201,23 +203,23 @@ export const Sales: React.FC = () => {
         {selectedSale && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
                 <div className="bg-white dark:bg-slate-800 rounded-lg shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
-                    <div className="p-4 border-b flex justify-between items-center"><h3 className="font-bold">Resumo da Transação</h3><button onClick={() => setSelectedSale(null)}><XCircle size={24}/></button></div>
+                    <div className="p-4 border-b flex justify-between items-center"><h3 className="font-bold dark:text-white">Resumo da Transação</h3><button onClick={() => setSelectedSale(null)}><XCircle size={24}/></button></div>
                     <div className="p-6 overflow-y-auto" ref={receiptRef}>
                         <div className="text-center border-b border-dashed pb-4">
-                            <h2 className="text-xl font-bold uppercase">{selectedSale.status_label}</h2>
-                            <p className="font-mono text-lg font-bold">{selectedSale.code}</p>
-                            <p className="text-sm">{new Date(selectedSale.created_at).toLocaleString()}</p>
+                            <h2 className="text-xl font-bold uppercase dark:text-white">{selectedSale.status_label}</h2>
+                            <p className="font-mono text-lg font-bold dark:text-primary-400">{selectedSale.code}</p>
+                            <p className="text-sm dark:text-slate-400">{new Date(selectedSale.created_at).toLocaleString()}</p>
                         </div>
-                        <div className="py-4"><p className="font-bold">{selectedSale.client?.full_name || 'Consumidor'}</p><p className="text-sm">{selectedSale.client?.phone}</p></div>
-                        <table className="w-full text-sm my-4 border-t pt-4">
+                        <div className="py-4"><p className="font-bold dark:text-white">{selectedSale.client?.full_name || 'Consumidor'}</p><p className="text-sm dark:text-slate-400">{selectedSale.client?.phone}</p></div>
+                        <table className="w-full text-sm my-4 border-t pt-4 dark:border-slate-700">
                             <tbody>{selectedSale.items?.map((item: any, i: number) => (
-                                <tr key={i} className="border-b"><td className="py-2">{item.quantity}x {item.product_variation?.products?.nome}</td><td className="text-right">{formatCurrency(item.unit_price * item.quantity)}</td></tr>
+                                <tr key={i} className="border-b dark:border-slate-700"><td className="py-2 dark:text-white">{item.quantity}x {item.product_variation?.products?.nome}</td><td className="text-right dark:text-white">{formatCurrency(item.unit_price * item.quantity)}</td></tr>
                             ))}</tbody>
                         </table>
-                        <div className="text-right border-t pt-4"><p className="text-2xl font-bold text-primary-600">{formatCurrency(selectedSale.total_value)}</p></div>
+                        <div className="text-right border-t pt-4 dark:border-slate-700"><p className="text-2xl font-bold text-primary-600">{formatCurrency(selectedSale.total_value)}</p></div>
                     </div>
-                    <div className="p-4 border-t flex justify-between">
-                         <button onClick={handlePrint} className="flex items-center px-4 py-2 bg-slate-200 rounded font-bold"><Printer size={18} className="mr-2"/> Imprimir</button>
+                    <div className="p-4 border-t dark:border-slate-700 flex justify-between bg-slate-50 dark:bg-slate-900/50">
+                         <button onClick={handlePrint} className="flex items-center px-4 py-2 bg-white dark:bg-slate-700 border rounded font-bold dark:text-white"><Printer size={18} className="mr-2"/> Imprimir</button>
                          <div className="flex gap-2">
                              {selectedSale.payment_status === 'pending' && <button onClick={() => setIsSettleModalOpen(true)} className="px-4 py-2 bg-green-600 text-white rounded font-bold">Receber</button>}
                              {selectedSale.status_label === 'Condicional' && <button onClick={() => handleStatusChange(selectedSale, 'Convertida')} className="px-4 py-2 bg-blue-600 text-white rounded font-bold">Converter</button>}
@@ -232,11 +234,36 @@ export const Sales: React.FC = () => {
         )}
 
         {isSecurityModalOpen && (
-            <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
-                <div className="bg-white dark:bg-slate-800 rounded-xl p-6 w-full max-w-sm">
-                    <div className="text-center mb-4"><div className="w-12 h-12 mx-auto bg-red-100 text-red-600 rounded-full flex items-center justify-center"><Lock size={24}/></div><h3 className="font-bold mt-2">Acesso Restrito</h3></div>
-                    <input type="password" autoFocus className="w-full p-3 border rounded text-center text-lg mb-4 dark:bg-slate-700 dark:text-white" placeholder="Sua Senha" value={passwordAttempt} onChange={e => setPasswordAttempt(e.target.value)} onKeyDown={e => e.key === 'Enter' && verifyPassword()}/>
-                    <div className="flex gap-2"><button onClick={() => setIsSecurityModalOpen(false)} className="flex-1 py-2">Sair</button><button onClick={verifyPassword} disabled={verifying} className="flex-1 py-2 bg-red-600 text-white rounded font-bold flex justify-center items-center">{verifying ? <Loader className="animate-spin" size={18}/> : 'Autorizar'}</button></div>
+            <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+                <div className="bg-white dark:bg-slate-800 rounded-xl p-8 w-full max-w-sm shadow-2xl border dark:border-slate-700">
+                    <div className="text-center mb-6">
+                        <div className="w-16 h-16 mx-auto bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-4"><Lock size={32}/></div>
+                        <h3 className="text-xl font-bold dark:text-white">Acesso Restrito</h3>
+                        <div className="mt-2 flex items-center justify-center gap-2 bg-slate-50 dark:bg-slate-700 p-2 rounded">
+                            <User size={14} className="text-slate-400"/>
+                            <p className="text-xs text-slate-500 dark:text-slate-300 font-medium">Autorizando como: <b className="text-primary-600 uppercase">{currentUser?.username || 'admin'}</b></p>
+                        </div>
+                    </div>
+                    <div className="relative mb-6">
+                        <input 
+                            type={showSecurityPassword ? "text" : "password"} 
+                            autoFocus 
+                            className="w-full p-4 pr-12 border rounded-xl text-center text-2xl tracking-widest dark:bg-slate-700 dark:text-white dark:border-slate-600 focus:ring-2 focus:ring-primary-500 outline-none" 
+                            placeholder="••••••" 
+                            value={passwordAttempt} 
+                            onChange={e => setPasswordAttempt(e.target.value)} 
+                            onKeyDown={e => e.key === 'Enter' && verifyPassword()}
+                        />
+                        <button type="button" onClick={() => setShowSecurityPassword(!showSecurityPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                            {showSecurityPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                        </button>
+                    </div>
+                    <div className="flex gap-3">
+                        <button onClick={() => setIsSecurityModalOpen(false)} className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg">Sair</button>
+                        <button onClick={verifyPassword} disabled={verifying} className="flex-1 py-3 bg-red-600 text-white rounded-lg font-bold flex justify-center items-center shadow-lg hover:bg-red-700 active:scale-95 transition-all">
+                            {verifying ? <Loader className="animate-spin" size={20}/> : 'Autorizar'}
+                        </button>
+                    </div>
                 </div>
             </div>
         )}
@@ -244,8 +271,8 @@ export const Sales: React.FC = () => {
         {isSettleModalOpen && (
             <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
                 <div className="bg-white dark:bg-slate-800 rounded-xl p-6 w-full max-w-sm">
-                    <h3 className="font-bold text-center text-lg">Receber Pagamento</h3>
-                    <div className="grid grid-cols-2 gap-2 my-4">{paymentMethods.map(m => (<button key={m.id} onClick={() => setSettleMethodId(m.id)} className={`p-2 border rounded text-sm ${settleMethodId === m.id ? 'bg-primary-50 border-primary-500' : ''}`}>{m.name}</button>))}</div>
+                    <h3 className="font-bold text-center text-lg dark:text-white">Receber Pagamento</h3>
+                    <div className="grid grid-cols-2 gap-2 my-4">{paymentMethods.map(m => (<button key={m.id} onClick={() => setSettleMethodId(m.id)} className={`p-2 border rounded text-sm dark:text-white ${settleMethodId === m.id ? 'bg-primary-50 border-primary-500 text-primary-600 dark:bg-primary-900/30' : 'dark:border-slate-600'}`}>{m.name}</button>))}</div>
                     <button onClick={confirmSettlePayment} className="w-full py-2 bg-green-600 text-white rounded font-bold">Confirmar</button>
                 </div>
             </div>
