@@ -27,7 +27,9 @@ import {
   AlertTriangle,
   AlertCircle,
   Eye,
-  EyeOff
+  EyeOff,
+  Percent,
+  Image as ImageIcon
 } from 'lucide-react';
 
 export const Settings: React.FC = () => {
@@ -65,7 +67,6 @@ export const Settings: React.FC = () => {
   }>({ name: '', type: 'credit', active: true, rates: {} });
 
   const [copied, setCopied] = useState<string | null>(null);
-  
   const [dbUrl, setDbUrl] = useState('');
   const [dbKey, setDbKey] = useState('');
 
@@ -201,32 +202,15 @@ export const Settings: React.FC = () => {
       else fetchSizes();
   };
 
-  const handleResetSizesToDefault = async () => {
-      if (!confirm("Isso irá resetar a lista para os tamanhos padrão. Deseja continuar?")) return;
-      setSyncingSizes(true);
-      try {
-          const defaults = [
-              { name: 'RN', sort_order: 0 }, { name: 'PB', sort_order: 1 }, 
-              { name: 'PP', sort_order: 2 }, { name: 'P', sort_order: 3 }, 
-              { name: 'M', sort_order: 4 }, { name: 'G', sort_order: 5 }, 
-              { name: 'GG', sort_order: 6 }, { name: 'XG', sort_order: 7 }, 
-              { name: 'XXG', sort_order: 8 }, { name: 'U', sort_order: 9 }
-          ];
-          for (const s of defaults) {
-              await supabase.from('product_sizes').upsert(s, { onConflict: 'name' });
-          }
-          await fetchSizes();
-      } catch (e: any) {
-          alert("Erro: " + e.message);
-      } finally {
-          setSyncingSizes(false);
-      }
-  };
-
   const handleOpenPaymentModal = (method?: PaymentMethod) => {
       if (method) {
           setEditingMethod(method);
-          setPaymentForm({ name: method.name, type: method.type, active: method.active, rates: method.rates || {} });
+          setPaymentForm({ 
+            name: method.name, 
+            type: method.type, 
+            active: method.active, 
+            rates: method.rates || { "1": 0 } 
+          });
       } else {
           setEditingMethod(null);
           setPaymentForm({ name: '', type: 'credit', active: true, rates: { "1": 0 } });
@@ -243,6 +227,14 @@ export const Settings: React.FC = () => {
       setLoading(false);
       setIsPaymentModalOpen(false);
       fetchPaymentMethods();
+  };
+
+  const updateRate = (installment: string, value: string) => {
+      const num = parseFloat(value) || 0;
+      setPaymentForm(prev => ({
+          ...prev,
+          rates: { ...prev.rates, [installment]: num }
+      }));
   };
 
   const copyScript = (sql: string, id: string) => {
@@ -271,27 +263,33 @@ export const Settings: React.FC = () => {
         <button onClick={() => setActiveTab('database')} className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors whitespace-nowrap ${activeTab === 'database' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Banco de Dados</button>
       </div>
 
-      {activeTab === 'database' && (
-          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-6">
-                  <h3 className="text-lg font-bold dark:text-white flex items-center mb-4"><Server className="mr-2" size={20}/> Conexão Supabase</h3>
-                  <div className="flex items-center gap-2 text-blue-600 bg-blue-50 dark:bg-blue-900/20 p-3 rounded border border-blue-100 dark:border-blue-800">
-                      <Check size={18}/>
-                      <p className="text-sm font-medium">Conexão gerenciada via Variáveis de Ambiente (Vercel).</p>
+      {activeTab === 'general' && !user?.isBootstrap && (
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg border dark:border-slate-700 p-8 max-w-2xl animate-in fade-in duration-300">
+              <h3 className="font-bold text-xl mb-6 dark:text-white flex items-center gap-2"><Building2 className="text-primary-600" size={24}/> Identidade da Loja</h3>
+              <div className="space-y-6">
+                  <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Nome da Loja</label>
+                      <input value={storeSettings.store_name} onChange={e => setStoreSettings({...storeSettings, store_name: e.target.value})} className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold" placeholder="Minha Loja de Pijamas" />
                   </div>
-              </div>
-              <div className="bg-blue-50 dark:bg-blue-900/10 border-2 border-blue-200 dark:border-blue-800 rounded-xl overflow-hidden shadow-sm">
-                  <div className="p-4 bg-blue-100 dark:bg-blue-900/30 flex justify-between items-center border-b border-blue-200 dark:border-blue-800">
+                  <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Cor do Tema (Identidade Visual)</label>
                       <div className="flex items-center gap-3">
-                        <div className="p-2 bg-blue-600 text-white rounded-lg shadow-sm"><Wand2 size={24}/></div>
-                        <div>
-                            <h3 className="font-bold text-blue-900 dark:text-blue-200">Patch de Correção</h3>
-                            <p className="text-xs text-blue-700 dark:text-blue-400">Use este script no SQL Editor do Supabase para corrigir tabelas ausentes.</p>
-                        </div>
+                          <input type="color" value={storeSettings.theme_color} onChange={e => setStoreSettings({...storeSettings, theme_color: e.target.value})} className="h-12 w-16 border rounded-lg cursor-pointer bg-white dark:bg-slate-700 p-1" />
+                          <input value={storeSettings.theme_color} onChange={e => setStoreSettings({...storeSettings, theme_color: e.target.value})} className="flex-1 p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white font-mono" />
                       </div>
-                      <button onClick={() => copyScript(patchSizesScript, 'patch_sql')} className="px-5 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-bold flex items-center">
-                          {copied === 'patch_sql' ? <Check size={18} className="mr-2"/> : <Copy size={18} className="mr-2"/>}
-                          Copiar SQL
+                  </div>
+                  <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-2">URL da Logo (PNG/JPG)</label>
+                      <div className="relative">
+                          <ImageIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
+                          <input value={storeSettings.logo_url} onChange={e => setStoreSettings({...storeSettings, logo_url: e.target.value})} className="w-full p-3 pl-10 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white text-sm" placeholder="https://exemplo.com/logo.png" />
+                      </div>
+                      <p className="text-[10px] text-slate-400 mt-1">Insira o link direto de uma imagem para aparecer no topo do menu e nos comprovantes.</p>
+                  </div>
+                  <div className="pt-6 border-t dark:border-slate-700 flex justify-end">
+                      <button onClick={handleSaveSettings} disabled={loading} className="px-8 py-3 bg-primary-600 text-white rounded-lg font-bold hover:bg-primary-700 shadow-lg shadow-primary-500/20 flex items-center gap-2 transition-all">
+                          {loading ? <Loader className="animate-spin" size={18}/> : <Save size={18}/>}
+                          Salvar Configurações
                       </button>
                   </div>
               </div>
@@ -299,24 +297,24 @@ export const Settings: React.FC = () => {
       )}
 
       {activeTab === 'users' && !user?.isBootstrap && (
-          <div className="bg-white dark:bg-slate-800 rounded-lg shadow overflow-hidden">
-              <div className="p-4 border-b dark:border-slate-700 flex justify-between items-center">
-                  <h3 className="font-bold dark:text-white flex items-center"><Users className="mr-2" size={20}/> Usuários</h3>
-                  <button onClick={() => handleOpenUserModal()} className="flex items-center px-4 py-2 bg-primary-600 text-white rounded font-bold text-sm">Novo Usuário</button>
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow border dark:border-slate-700 overflow-hidden">
+              <div className="p-6 border-b dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
+                  <h3 className="font-bold dark:text-white flex items-center gap-2"><Users className="text-primary-600" size={24}/> Gestão de Acessos</h3>
+                  <button onClick={() => handleOpenUserModal()} className="flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg font-bold text-sm shadow-sm hover:bg-primary-700"><Plus size={18} className="mr-1"/> Novo Usuário</button>
               </div>
               <table className="w-full text-left">
-                  <thead className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-sm uppercase">
-                      <tr><th className="p-4">Usuário</th><th className="p-4">Permissão</th><th className="p-4 text-center">Ações</th></tr>
+                  <thead className="bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 text-xs uppercase font-bold">
+                      <tr><th className="p-4">Usuário</th><th className="p-4">Cargo / Permissão</th><th className="p-4 text-center">Ações</th></tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                       {users.map(u => (
                           <tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
                               <td className="p-4 font-bold dark:text-white">{u.username}</td>
-                              <td className="p-4"><span className={`px-2 py-1 rounded text-xs font-bold uppercase ${u.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>{u.role}</span></td>
+                              <td className="p-4"><span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${u.role === 'admin' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30'}`}>{u.role}</span></td>
                               <td className="p-4 text-center">
-                                  <div className="flex justify-center gap-2">
-                                      <button onClick={() => handleOpenUserModal(u)} className="p-2 text-blue-600 hover:bg-blue-100 rounded transition-colors" title="Editar Usuário"><Edit2 size={16}/></button>
-                                      <button onClick={() => handleDeleteUser(u.id)} className="p-2 text-red-600 hover:bg-red-100 rounded transition-colors"><Trash2 size={16}/></button>
+                                  <div className="flex justify-center gap-1">
+                                      <button onClick={() => handleOpenUserModal(u)} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"><Edit2 size={16}/></button>
+                                      <button onClick={() => handleDeleteUser(u.id)} className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"><Trash2 size={16}/></button>
                                   </div>
                               </td>
                           </tr>
@@ -326,141 +324,168 @@ export const Settings: React.FC = () => {
           </div>
       )}
 
-      {activeTab === 'sizes' && !user?.isBootstrap && (
-          <div className="bg-white dark:bg-slate-800 rounded-lg shadow overflow-hidden">
-              <div className="p-4 border-b dark:border-slate-700 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-slate-50 dark:bg-slate-900/50">
-                  <h3 className="font-bold dark:text-white flex items-center"><Maximize2 className="mr-2" size={20}/> Gerenciar Tamanhos</h3>
-                  <button onClick={() => handleOpenSizeModal()} className="flex items-center px-4 py-2 bg-primary-600 text-white rounded font-bold text-xs shadow-md"><Plus size={14} className="mr-2"/> Novo Tamanho</button>
+      {activeTab === 'payments' && !user?.isBootstrap && (
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow border dark:border-slate-700 overflow-hidden">
+              <div className="p-6 border-b dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
+                  <h3 className="font-bold dark:text-white flex items-center gap-2"><CreditCard className="text-primary-600" size={24}/> Opções de Pagamento</h3>
+                  <button onClick={() => handleOpenPaymentModal()} className="px-4 py-2 bg-primary-600 text-white rounded-lg font-bold text-sm shadow-sm hover:bg-primary-700"><Plus size={18} className="mr-1"/> Adicionar Método</button>
               </div>
               <table className="w-full text-left">
-                <thead className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-sm uppercase">
-                    <tr><th className="p-4">Tamanho</th><th className="p-4">Ordem</th><th className="p-4 text-center">Ações</th></tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                    {sizes.map(s => (
-                        <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                            <td className="p-4 font-bold dark:text-white uppercase">{s.name}</td>
-                            <td className="p-4 text-slate-500">{s.sort_order}</td>
-                            <td className="p-4 text-center">
-                                <div className="flex justify-center gap-2">
-                                    <button onClick={() => handleOpenSizeModal(s)} className="p-2 text-blue-600 hover:bg-blue-50 rounded"><Edit2 size={16}/></button>
-                                    <button onClick={() => handleDeleteSize(s.id)} className="p-2 text-red-600 hover:bg-red-50 rounded"><Trash2 size={16}/></button>
-                                </div>
-                            </td>
-                        </tr>
-                    ))}
-                </tbody>
+                  <thead className="bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 text-xs uppercase font-bold">
+                      <tr><th className="p-4">Nome</th><th className="p-4">Tipo</th><th className="p-4">Taxas</th><th className="p-4">Status</th><th className="p-4 text-center">Ações</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                      {paymentMethods.map(m => (
+                          <tr key={m.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                              <td className="p-4 font-bold dark:text-white">{m.name}</td>
+                              <td className="p-4 uppercase text-[10px] font-bold text-slate-400">{m.type}</td>
+                              <td className="p-4 text-xs text-slate-500">
+                                  {m.type === 'credit' ? `${Object.keys(m.rates || {}).length} faixas de juros` : 'Sem taxas'}
+                              </td>
+                              <td className="p-4">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${m.active ? 'bg-green-100 text-green-700 dark:bg-green-900/30' : 'bg-red-100 text-red-700 dark:bg-red-900/30'}`}>
+                                      {m.active ? 'Ativo' : 'Inativo'}
+                                  </span>
+                              </td>
+                              <td className="p-4 text-center">
+                                  <button onClick={() => handleOpenPaymentModal(m)} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg"><Edit2 size={16}/></button>
+                              </td>
+                          </tr>
+                      ))}
+                  </tbody>
               </table>
           </div>
       )}
 
-      {/* MODAL USUÁRIO */}
+      {/* MODAL PAGAMENTO COM TAXAS */}
+      {isPaymentModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden border dark:border-slate-700 animate-in zoom-in-95 duration-200">
+                  <div className="p-6 border-b dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
+                      <h3 className="text-lg font-bold dark:text-white flex items-center gap-2"><CreditCard size={20}/> Configurar Método</h3>
+                      <button onClick={() => setIsPaymentModalOpen(false)}><X size={20} className="text-slate-400"/></button>
+                  </div>
+                  <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Nome Visível</label>
+                            <input value={paymentForm.name} onChange={e => setPaymentForm({...paymentForm, name: e.target.value})} className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="Ex: Cartão Visa" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Tipo de Sistema</label>
+                            <select value={paymentForm.type} onChange={e => setPaymentForm({...paymentForm, type: e.target.value as any})} className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white">
+                                <option value="cash">Dinheiro</option>
+                                <option value="pix">Pix</option>
+                                <option value="debit">Débito</option>
+                                <option value="credit">Crédito</option>
+                            </select>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg">
+                          <input type="checkbox" checked={paymentForm.active} onChange={e => setPaymentForm({...paymentForm, active: e.target.checked})} className="w-5 h-5 text-primary-600 rounded" />
+                          <label className="text-sm font-medium dark:text-white">Ativo no Checkout (PDV)</label>
+                      </div>
+
+                      {paymentForm.type === 'credit' && (
+                          <div className="space-y-4">
+                              <h4 className="font-bold text-xs text-primary-600 uppercase flex items-center gap-1 border-b dark:border-slate-700 pb-2"><Percent size={14}/> Taxas de Parcelamento (%)</h4>
+                              <div className="grid grid-cols-3 gap-3">
+                                  {[1,2,3,4,5,6,7,8,9,10,11,12].map(num => (
+                                      <div key={num} className="space-y-1">
+                                          <label className="text-[10px] font-bold text-slate-400 uppercase">{num}x</label>
+                                          <input 
+                                            type="number" 
+                                            step="0.01"
+                                            value={paymentForm.rates[num.toString()] || ''} 
+                                            onChange={e => updateRate(num.toString(), e.target.value)}
+                                            className="w-full p-2 border rounded bg-slate-50 dark:bg-slate-700 dark:border-slate-600 dark:text-white text-sm"
+                                            placeholder="0.00"
+                                          />
+                                      </div>
+                                  ))}
+                              </div>
+                              <p className="text-[10px] text-slate-400 italic">O sistema aplicará automaticamente estas taxas ao valor total da venda baseada na parcela selecionada.</p>
+                          </div>
+                      )}
+                  </div>
+                  <div className="p-6 border-t dark:border-slate-700 flex justify-end gap-3 bg-slate-50 dark:bg-slate-900/50">
+                        <button onClick={() => setIsPaymentModalOpen(false)} className="px-4 py-2 text-slate-500 font-medium">Cancelar</button>
+                        <button onClick={handleSavePaymentMethod} disabled={loading} className="px-8 py-2 bg-primary-600 text-white rounded-lg font-bold flex items-center gap-2 shadow-lg hover:bg-primary-700 transition-all">
+                            {loading ? <Loader className="animate-spin" size={18}/> : <Save size={18}/>} 
+                            Salvar Método
+                        </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* TAB USUÁRIOS MODAL - JÁ COM OLHO */}
       {isUserModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
               <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden border dark:border-slate-700 animate-in zoom-in-95 duration-200">
                   <div className="p-6 border-b dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
-                      <h3 className="text-lg font-bold dark:text-white">{editingUser ? 'Editar Usuário' : 'Novo Usuário'}</h3>
+                      <h3 className="text-lg font-bold dark:text-white">{editingUser ? 'Editar Perfil' : 'Novo Colaborador'}</h3>
                       <button onClick={() => setIsUserModalOpen(false)}><X size={20} className="text-slate-400"/></button>
                   </div>
                   <div className="p-6 space-y-4">
                       <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Login / Nome</label>
-                          <input value={userForm.username} onChange={e => setUserForm({...userForm, username: e.target.value})} className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold" placeholder="Ex: joao.pijamas" />
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Login / Identificação</label>
+                          <div className="relative">
+                            <Users className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16}/>
+                            <input value={userForm.username} onChange={e => setUserForm({...userForm, username: e.target.value})} className="w-full p-3 pl-10 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold" />
+                          </div>
                       </div>
                       <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Senha</label>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Senha de Acesso</label>
                           <div className="relative">
+                              <Shield className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16}/>
                               <input 
                                   type={showUserPassword ? "text" : "password"} 
                                   value={userForm.password} 
                                   onChange={e => setUserForm({...userForm, password: e.target.value})} 
-                                  className="w-full p-3 pr-12 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white" 
+                                  className="w-full p-3 pl-10 pr-12 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white" 
                                   placeholder="••••••••"
                               />
                               <button type="button" onClick={() => setShowUserPassword(!showUserPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                                {showUserPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                                {showUserPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                               </button>
                           </div>
                       </div>
                       <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tipo de Acesso</label>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Nível de Permissão</label>
                           <select value={userForm.role} onChange={e => setUserForm({...userForm, role: e.target.value as any})} className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white font-medium">
                               <option value="employee">Funcionário (PDV + Vendas)</option>
-                              <option value="admin">Administrador (Acesso Total)</option>
+                              <option value="admin">Administrador (Controle Total)</option>
                           </select>
                       </div>
                   </div>
                   <div className="p-6 border-t dark:border-slate-700 flex justify-end gap-3 bg-slate-50 dark:bg-slate-900/50">
-                        <button onClick={() => setIsUserModalOpen(false)} className="px-4 py-2 text-slate-500 font-medium hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg">Cancelar</button>
-                        <button onClick={handleSaveUser} disabled={loading} className="px-6 py-2 bg-primary-600 text-white rounded-lg font-bold flex items-center shadow-lg hover:bg-primary-700 transition-all">
-                            {loading ? <Loader className="animate-spin mr-2" size={16}/> : <Save className="mr-2" size={16}/>} 
-                            {editingUser ? 'Salvar Alterações' : 'Criar Usuário'}
+                        <button onClick={() => setIsUserModalOpen(false)} className="px-4 py-2 text-slate-500 font-medium">Cancelar</button>
+                        <button onClick={handleSaveUser} disabled={loading} className="px-6 py-2 bg-primary-600 text-white rounded-lg font-bold flex items-center gap-2 shadow-lg hover:bg-primary-700 transition-all">
+                            {loading ? <Loader className="animate-spin" size={16}/> : <Save size={16}/>} 
+                            {editingUser ? 'Salvar Alterações' : 'Cadastrar'}
                         </button>
                   </div>
               </div>
           </div>
       )}
 
-      {/* MODAL PAGAMENTO */}
-      {isPaymentModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden border dark:border-slate-700">
-                  <div className="p-6 border-b dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
-                      <h3 className="text-lg font-bold dark:text-white">Forma de Pagamento</h3>
-                      <button onClick={() => setIsPaymentModalOpen(false)}><X size={20}/></button>
-                  </div>
-                  <div className="p-6 space-y-4">
+      {/* TAB BANCO DE DADOS - MANUTENÇÃO */}
+      {activeTab === 'database' && (
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-8">
+                  <h3 className="text-xl font-bold dark:text-white flex items-center mb-6 gap-2"><Server className="text-primary-600" size={24}/> Configurações de Conectividade</h3>
+                  <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-100 dark:border-blue-800 flex items-start gap-4 mb-6">
+                      <div className="p-2 bg-blue-100 dark:bg-blue-800 text-blue-600 dark:text-blue-300 rounded-full"><Check size={20}/></div>
                       <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Nome</label>
-                          <input value={paymentForm.name} onChange={e => setPaymentForm({...paymentForm, name: e.target.value})} className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
-                      </div>
-                      <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tipo</label>
-                          <select value={paymentForm.type} onChange={e => setPaymentForm({...paymentForm, type: e.target.value as any})} className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white">
-                              <option value="cash">Dinheiro</option>
-                              <option value="pix">Pix</option>
-                              <option value="debit">Cartão Débito</option>
-                              <option value="credit">Cartão Crédito</option>
-                          </select>
-                      </div>
-                      <div className="flex items-center gap-2">
-                          <input type="checkbox" checked={paymentForm.active} onChange={e => setPaymentForm({...paymentForm, active: e.target.checked})} className="w-4 h-4 text-primary-600" />
-                          <label className="text-sm dark:text-white">Ativo para uso no PDV</label>
+                          <p className="text-sm font-bold text-blue-800 dark:text-blue-200">Ambiente Gerenciado</p>
+                          <p className="text-xs text-blue-600 dark:text-blue-400">O sistema está conectado automaticamente via variáveis de ambiente da Vercel.</p>
                       </div>
                   </div>
-                  <div className="p-6 border-t dark:border-slate-700 flex justify-end gap-2 bg-slate-50 dark:bg-slate-900/50">
-                        <button onClick={() => setIsPaymentModalOpen(false)} className="px-4 py-2 text-slate-500">Cancelar</button>
-                        <button onClick={handleSavePaymentMethod} disabled={loading} className="px-6 py-2 bg-primary-600 text-white rounded font-bold flex items-center">
-                            {loading ? <Loader className="animate-spin mr-2" size={16}/> : <Save className="mr-2" size={16}/>} Salvar
-                        </button>
-                  </div>
-              </div>
-          </div>
-      )}
-
-      {/* MODAL TAMANHO */}
-      {isSizeModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden border dark:border-slate-700 animate-in zoom-in-95 duration-200">
-                  <div className="p-6 border-b dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
-                      <h3 className="text-lg font-bold dark:text-white">{editingSize ? 'Editar Tamanho' : 'Novo Tamanho'}</h3>
-                      <button onClick={() => setIsSizeModalOpen(false)}><X size={20} className="text-slate-400"/></button>
-                  </div>
-                  <div className="p-6 space-y-4">
-                      <div>
-                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Nome</label>
-                          <input value={sizeForm.name} onChange={e => setSizeForm({...sizeForm, name: e.target.value.toUpperCase()})} className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold uppercase" autoFocus />
-                      </div>
-                      <div>
-                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Ordem</label>
-                          <input type="number" value={sizeForm.sort_order} onChange={e => setSizeForm({...sizeForm, sort_order: parseInt(e.target.value) || 0})} className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
-                      </div>
-                      <div className="flex justify-end gap-2 pt-4 border-t dark:border-slate-700">
-                        <button onClick={() => setIsSizeModalOpen(false)} className="px-4 py-2 text-slate-500">Cancelar</button>
-                        <button onClick={handleSaveSize} disabled={loading} className="px-6 py-2 bg-primary-600 text-white rounded font-bold shadow-lg flex items-center hover:bg-primary-700">
-                            {loading ? <Loader className="animate-spin mr-2" size={16}/> : <Save className="mr-2" size={16}/>} Salvar
-                        </button>
-                      </div>
+                  <div className="p-6 bg-slate-100 dark:bg-slate-800 rounded-xl border-2 border-dashed dark:border-slate-700 text-center">
+                       <AlertCircle className="mx-auto mb-3 text-slate-400" size={32}/>
+                       <p className="text-slate-500 dark:text-slate-400 text-sm">A edição manual de chaves está desabilitada para garantir a segurança da produção.</p>
                   </div>
               </div>
           </div>
