@@ -2,9 +2,8 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { Product, ProductVariation, ProductSize } from '../types';
-import { ChevronDown, ChevronRight, Plus, AlertTriangle, Loader, Trash2, Edit2, X, Save, Search, Download, Layers, Settings as SettingsIcon, Package, PlusCircle } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, AlertTriangle, Loader, Trash2, Edit2, X, Save, Search, Download, Layers, Settings as SettingsIcon, Package, PlusCircle, Upload, Combine } from 'lucide-react';
 import { formatCurrency, parseCurrencyString } from '../utils/formatters';
-import { Link } from 'react-router-dom';
 
 type SortField = 'modelo' | 'nome' | 'categoria' | 'stock';
 
@@ -33,6 +32,9 @@ export const Inventory: React.FC = () => {
   const [newVariant, setNewVariant] = useState({ productId: '', model: '', size: '', sku: '', quantity: 0, price_cost: '', price_sale: '' });
   const [tempVar, setTempVar] = useState({ model: '', size: '', cost: '', sale: '', sku: '', qty: 0 });
   
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+
   const fetchData = async () => {
     setLoading(true);
     const { data: prodData } = await supabase.from('products').select('*');
@@ -77,8 +79,9 @@ export const Inventory: React.FC = () => {
     });
   }, [products, searchQuery, sortConfig]);
 
+  // --- CSV LOGIC ---
   const handleExportCSV = () => {
-      const header = "SKU,Referencia,Nome,Modelo,Categoria,Tamanho,Quantidade,Preco_Custo,Preco_Venda\n";
+      const header = "SKU,Referencia,Nome,Modelo_Cor,Categoria,Tamanho,Quantidade,Preco_Custo,Preco_Venda\n";
       const rows: string[] = [];
       products.forEach(p => {
           p.variations?.forEach(v => {
@@ -95,6 +98,133 @@ export const Inventory: React.FC = () => {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+  };
+
+  const handleImportCSV = async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      setImporting(true);
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+          const text = e.target?.result as string;
+          if (!text) return;
+
+          const lines = text.split('\n');
+          let success = 0;
+          const startIndex = lines[0].toLowerCase().includes('sku') ? 1 : 0;
+
+          for (let i = startIndex; i < lines.length; i++) {
+              const line = lines[i].trim();
+              if (!line) continue;
+              
+              const cols = line.split(',').map(c => c.replace(/^"|"$/g, '').trim());
+              if (cols.length < 3) continue;
+
+              const [sku, ref, nome, cor, cat, tam, qtd, custo, venda] = cols;
+
+              // 1. Achar ou criar produto pai
+              let productId = '';
+              const { data: existingProd } = await supabase.from('products').select('id').eq('nome', nome).eq('modelo', ref).maybeSingle();
+              
+              if (existingProd) {
+                  productId = existingProd.id;
+              } else {
+                  const { data: newP } = await supabase.from('products').insert({ nome, modelo: ref, categoria: cat || 'Geral' }).select().single();
+                  if (newP) productId = newP.id;
+              }
+
+              if (productId) {
+                  // 2. Upsert da variação
+                  const { data: existingVar } = await supabase.from('estoque_tamanhos')
+                      .select('id, quantity')
+                      .eq('product_id', productId)
+                      .eq('model_variant', cor || 'Padrão')
+                      .eq('size', tam)
+                      .maybeSingle();
+
+                  if (existingVar) {
+                      await supabase.from('estoque_tamanhos').update({ 
+                          quantity: existingVar.quantity + (parseInt(qtd) || 0),
+                          price_cost: parseFloat(custo) || 0,
+                          price_sale: parseFloat(venda) || 0
+                      }).eq('id', existingVar.id);
+                  } else {
+                      await supabase.from('estoque_tamanhos').insert({
+                          product_id: productId,
+                          model_variant: cor || 'Padrão',
+                          size: tam,
+                          sku: sku || '',
+                          quantity: parseInt(qtd) || 0,
+                          price_cost: parseFloat(custo) || 0,
+                          price_sale: parseFloat(venda) || 0
+                      });
+                  }
+                  success++;
+              }
+          }
+          alert(`Importação concluída: ${success} registros processados.`);
+          setImporting(false);
+          fetchData();
+      };
+      reader.readAsText(file);
+  };
+
+  // --- MERGE LOGIC ---
+  const handleMergeDuplicates = async () => {
+    if (!confirm("Isso irá unir produtos com a mesma Referência em um só registro. As quantidades serão somadas. Deseja continuar?")) return;
+    
+    setLoading(true);
+    try {
+        // 1. Agrupar produtos por modelo
+        const groups: Record<string, Product[]> = {};
+        products.forEach(p => {
+            if (p.modelo) {
+                if (!groups[p.modelo]) groups[p.modelo] = [];
+                groups[p.modelo].push(p);
+            }
+        });
+
+        for (const ref in groups) {
+            const list = groups[ref];
+            if (list.length > 1) {
+                // Manter o primeiro, mover variações dos outros
+                const mainProduct = list[0];
+                const duplicates = list.slice(1);
+
+                for (const dup of duplicates) {
+                    if (!dup.variations) continue;
+                    
+                    for (const v of dup.variations) {
+                        // Verifica se o main já tem essa cor/tamanho
+                        const { data: match } = await supabase.from('estoque_tamanhos')
+                            .select('id, quantity')
+                            .eq('product_id', mainProduct.id)
+                            .eq('model_variant', v.model_variant)
+                            .eq('size', v.size)
+                            .maybeSingle();
+
+                        if (match) {
+                            // Soma estoque e deleta a variação do duplicado
+                            await supabase.from('estoque_tamanhos').update({ quantity: match.quantity + v.quantity }).eq('id', match.id);
+                            await supabase.from('estoque_tamanhos').delete().eq('id', v.id);
+                        } else {
+                            // Apenas move a variação para o produto principal
+                            await supabase.from('estoque_tamanhos').update({ product_id: mainProduct.id }).eq('id', v.id);
+                        }
+                    }
+                    // Deleta o produto duplicado agora que está vazio
+                    await supabase.from('products').delete().eq('id', dup.id);
+                }
+            }
+        }
+        alert("Mesclagem concluída com sucesso!");
+        fetchData();
+    } catch (e: any) {
+        alert("Erro na mesclagem: " + e.message);
+    } finally {
+        setLoading(false);
+    }
   };
 
   const handleDeleteVariation = async (id: string) => {
@@ -199,65 +329,86 @@ export const Inventory: React.FC = () => {
   };
 
   return (
-    <div>
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 gap-4">
-        <div><h2 className="text-2xl font-bold text-slate-800 dark:text-white">Estoque Inteligente</h2><p className="text-sm text-slate-500">Agrupado por Referência (Nome)</p></div>
-        <div className="flex-1 max-w-md w-full relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} /><input type="text" placeholder="Buscar..." className="w-full pl-10 pr-4 py-2 border rounded-lg dark:bg-slate-700 dark:text-white shadow-sm" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} /></div>
-        <div className="flex gap-2">
-          <button onClick={handleExportCSV} className="px-4 py-2 bg-white dark:bg-slate-800 border rounded text-sm hover:bg-slate-50 transition-colors shadow-sm"><Download size={16} /></button>
-          <button onClick={() => setIsNewProductModalOpen(true)} className="px-4 py-2 bg-primary-600 text-white rounded text-sm font-bold shadow-md hover:bg-primary-700 transition-colors">Novo Produto</button>
+    <div className="space-y-6">
+      <input type="file" accept=".csv" ref={fileInputRef} className="hidden" onChange={handleImportCSV} />
+
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
+        <div><h2 className="text-2xl font-bold text-slate-800 dark:text-white">Estoque Inteligente</h2><p className="text-sm text-slate-500">Agrupado por Referência (Modelo)</p></div>
+        
+        <div className="flex-1 max-w-md w-full relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <input type="text" placeholder="Buscar por Nome, Ref ou SKU..." className="w-full pl-10 pr-4 py-2 border rounded-lg dark:bg-slate-700 dark:text-white shadow-sm focus:ring-2 focus:ring-primary-500 outline-none" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+        </div>
+
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={handleMergeDuplicates} disabled={loading} className="px-4 py-2 bg-amber-50 text-amber-600 border border-amber-200 rounded-lg text-sm font-bold flex items-center hover:bg-amber-100 transition-colors shadow-sm" title="Unir referências iguais">
+            <Combine size={18} className="mr-2"/> Mesclar Ref
+          </button>
+          <button onClick={handleExportCSV} className="p-2 bg-white dark:bg-slate-800 border rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-50 transition-colors shadow-sm" title="Exportar CSV"><Download size={20} /></button>
+          <button onClick={() => fileInputRef.current?.click()} className="p-2 bg-white dark:bg-slate-800 border rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-50 transition-colors shadow-sm" title="Importar CSV">
+            {importing ? <Loader className="animate-spin" size={20}/> : <Upload size={20} />}
+          </button>
+          <button onClick={() => setIsNewProductModalOpen(true)} className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-bold shadow-md hover:bg-primary-700 transition-colors flex items-center">
+            <Plus size={18} className="mr-1"/> Novo Produto
+          </button>
         </div>
       </div>
 
-      <div className="bg-white dark:bg-slate-800 rounded-lg shadow overflow-hidden border dark:border-slate-700">
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg overflow-hidden border dark:border-slate-700">
         <div className="overflow-x-auto">
             <table className="w-full text-left">
-            <thead className="bg-slate-50 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+            <thead className="bg-slate-50 dark:bg-slate-700 text-slate-500 dark:text-slate-300 text-xs uppercase font-bold">
                 <tr><th className="p-4 w-10"></th><th className="p-4">Referência</th><th className="p-4">Nome</th><th className="p-4">Categoria</th><th className="p-4 text-right">Estoque</th><th className="p-4 text-center">Ações</th></tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                 {loading && products.length === 0 ? (
                     <tr><td colSpan={6} className="p-12 text-center"><Loader className="animate-spin mx-auto text-primary-500" size={32} /></td></tr>
+                ) : processedProducts.length === 0 ? (
+                    <tr><td colSpan={6} className="p-12 text-center text-slate-500">Nenhum produto encontrado.</td></tr>
                 ) : processedProducts.map(product => (
                     <React.Fragment key={product.id}>
                         <tr 
                           onClick={() => setExpandedRow(expandedRow === product.id ? null : product.id)}
-                          className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer"
+                          className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer group"
                         >
                             <td className="p-4">{expandedRow === product.id ? <ChevronDown size={18} className="text-primary-500" /> : <ChevronRight size={18} />}</td>
-                            <td className="p-4 font-mono text-sm">{product.modelo}</td>
+                            <td className="p-4 font-mono text-sm font-bold text-slate-700 dark:text-slate-200">{product.modelo}</td>
                             <td className="p-4 font-bold dark:text-white">{product.nome}</td>
-                            <td className="p-4"><span className="px-2 py-1 bg-slate-100 dark:bg-slate-900 rounded text-xs">{product.categoria}</span></td>
-                            <td className="p-4 text-right font-bold text-primary-600">{product.variations?.reduce((acc, v) => acc + v.quantity, 0) || 0} un</td>
+                            <td className="p-4"><span className="px-2 py-1 bg-slate-100 dark:bg-slate-900 rounded-lg text-[10px] font-bold uppercase">{product.categoria}</span></td>
+                            <td className="p-4 text-right">
+                                <span className={`font-bold ${product.variations?.reduce((acc, v) => acc + v.quantity, 0) || 0 > 0 ? 'text-primary-600' : 'text-red-500'}`}>
+                                    {product.variations?.reduce((acc, v) => acc + v.quantity, 0) || 0} un
+                                </span>
+                            </td>
                             <td className="p-4 text-right" onClick={(e) => e.stopPropagation()}>
-                                <div className="flex gap-2 justify-end">
-                                    <button onClick={() => setEditingProduct(product)} className="p-2 text-slate-400 hover:text-blue-500 transition-colors"><Edit2 size={16}/></button>
-                                    <button onClick={() => openAddVariantModal(product.id)} className="bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300 px-3 py-1 text-xs rounded font-bold hover:bg-primary-100 transition-colors">Nova Var</button>
-                                    <button onClick={() => handleDeleteProduct(product.id)} className="p-2 text-slate-400 hover:text-red-500 transition-colors"><Trash2 size={16}/></button>
+                                <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button onClick={() => setEditingProduct(product)} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg"><Edit2 size={16}/></button>
+                                    <button onClick={() => openAddVariantModal(product.id)} className="bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300 px-3 py-1 text-[10px] rounded-lg font-bold hover:bg-primary-100 transition-colors uppercase">Variante</button>
+                                    <button onClick={() => handleDeleteProduct(product.id)} className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg"><Trash2 size={16}/></button>
                                 </div>
                             </td>
                         </tr>
                         {expandedRow === product.id && (
                         <tr>
                             <td colSpan={6} className="bg-slate-50 dark:bg-slate-900/30 p-4 border-t border-slate-100 dark:border-slate-700">
-                                <table className="w-full text-sm bg-white dark:bg-slate-800 rounded shadow-sm overflow-hidden border dark:border-slate-700">
+                                <table className="w-full text-sm bg-white dark:bg-slate-800 rounded-xl shadow-sm overflow-hidden border dark:border-slate-700">
                                     <thead className="bg-slate-100 dark:bg-slate-700/50 text-slate-500 font-bold uppercase text-[10px]"><tr className="border-b dark:border-slate-700"><th className="p-3 text-left">Modelo/Cor</th><th className="p-3">Tam</th><th className="p-3">SKU</th><th className="p-3 text-right">Custo</th><th className="p-3 text-right">Venda</th><th className="p-3 text-right">Qtd</th><th className="p-3 text-center">Ações</th></tr></thead>
                                     <tbody className="divide-y dark:divide-slate-700">
                                         {product.variations?.map(v => (
                                         <tr key={v.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30">
-                                            <td className="p-3 font-medium">{v.model_variant}</td>
+                                            <td className="p-3 font-medium dark:text-white uppercase text-[11px]">{v.model_variant}</td>
                                             <td className="p-3 font-bold text-primary-600 uppercase">{v.size}</td>
-                                            <td className="p-3 font-mono text-xs">{v.sku}</td>
+                                            <td className="p-3 font-mono text-xs text-slate-400">{v.sku}</td>
                                             <td className="p-3 text-right text-slate-400">{formatCurrency(v.price_cost)}</td>
-                                            <td className="p-3 text-right font-bold">{formatCurrency(v.price_sale)}</td>
+                                            <td className="p-3 text-right font-bold dark:text-white">{formatCurrency(v.price_sale)}</td>
                                             <td className="p-3 text-right">
-                                                <span className={`px-2 py-0.5 rounded font-bold ${v.quantity <= 1 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{v.quantity} un</span>
+                                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${v.quantity <= 0 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{v.quantity} un</span>
                                             </td>
                                             <td className="p-3 text-center">
-                                                <div className="flex justify-center gap-2">
-                                                    <button onClick={() => { setRestockVariation({ id: v.id, name: `${product.nome} - ${v.size}`, current: v.quantity, add: 0 }); setIsRestockModalOpen(true); }} className="p-1 text-green-600 hover:bg-green-50 rounded" title="Entrada de Estoque"><PlusCircle size={16}/></button>
-                                                    <button onClick={() => setEditingVariation(v)} className="p-1 text-blue-500 hover:bg-blue-50 rounded" title="Editar"><Edit2 size={16}/></button>
-                                                    <button onClick={() => handleDeleteVariation(v.id)} className="p-1 text-red-500 hover:bg-red-50 rounded" title="Excluir"><Trash2 size={16}/></button>
+                                                <div className="flex justify-center gap-1">
+                                                    <button onClick={() => { setRestockVariation({ id: v.id, name: `${product.nome} - ${v.size}`, current: v.quantity, add: 0 }); setIsRestockModalOpen(true); }} className="p-1.5 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-lg"><PlusCircle size={16}/></button>
+                                                    <button onClick={() => setEditingVariation(v)} className="p-1.5 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg"><Edit2 size={16}/></button>
+                                                    <button onClick={() => handleDeleteVariation(v.id)} className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg"><Trash2 size={16}/></button>
                                                 </div>
                                             </td>
                                         </tr>
