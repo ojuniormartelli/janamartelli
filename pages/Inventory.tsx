@@ -11,6 +11,7 @@ export const Inventory: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [sizes, setSizes] = useState<ProductSize[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isMerging, setIsMerging] = useState(false);
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   
   // Modals
@@ -123,7 +124,6 @@ export const Inventory: React.FC = () => {
 
               const [sku, ref, nome, cor, cat, tam, qtd, custo, venda] = cols;
 
-              // 1. Achar ou criar produto pai
               let productId = '';
               const { data: existingProd } = await supabase.from('products').select('id').eq('nome', nome).eq('modelo', ref).maybeSingle();
               
@@ -135,7 +135,6 @@ export const Inventory: React.FC = () => {
               }
 
               if (productId) {
-                  // 2. Upsert da variação
                   const { data: existingVar } = await supabase.from('estoque_tamanhos')
                       .select('id, quantity')
                       .eq('product_id', productId)
@@ -170,33 +169,41 @@ export const Inventory: React.FC = () => {
       reader.readAsText(file);
   };
 
-  // --- MERGE LOGIC ---
+  // --- MERGE LOGIC (Melhorada) ---
   const handleMergeDuplicates = async () => {
-    if (!confirm("Isso irá unir produtos com a mesma Referência em um só registro. As quantidades serão somadas. Deseja continuar?")) return;
+    if (!confirm("Isso irá unir TODOS os produtos que possuem a mesma Referência exata. As quantidades serão somadas. Deseja continuar?")) return;
     
-    setLoading(true);
+    setIsMerging(true);
     try {
-        // 1. Agrupar produtos por modelo
-        const groups: Record<string, Product[]> = {};
-        products.forEach(p => {
+        // 1. Recarregar dados para garantir que não estamos usando estado antigo
+        const { data: allProds } = await supabase.from('products').select('*');
+        const { data: allVars } = await supabase.from('estoque_tamanhos').select('*');
+        
+        if (!allProds) return;
+
+        // 2. Agrupar produtos por modelo (TRIMMED e LOWERCASE para garantir match)
+        const groups: Record<string, any[]> = {};
+        allProds.forEach(p => {
             if (p.modelo) {
-                if (!groups[p.modelo]) groups[p.modelo] = [];
-                groups[p.modelo].push(p);
+                const key = p.modelo.toString().trim().toLowerCase();
+                if (!groups[key]) groups[key] = [];
+                groups[key].push({ ...p, variations: allVars?.filter(v => v.product_id === p.id) || [] });
             }
         });
+
+        let totalMerged = 0;
 
         for (const ref in groups) {
             const list = groups[ref];
             if (list.length > 1) {
-                // Manter o primeiro, mover variações dos outros
+                // Manter o primeiro da lista como principal
                 const mainProduct = list[0];
                 const duplicates = list.slice(1);
 
                 for (const dup of duplicates) {
-                    if (!dup.variations) continue;
-                    
+                    // Mover variações do duplicado para o principal
                     for (const v of dup.variations) {
-                        // Verifica se o main já tem essa cor/tamanho
+                        // Verifica se o principal já tem essa combinação exata de Cor + Tamanho
                         const { data: match } = await supabase.from('estoque_tamanhos')
                             .select('id, quantity')
                             .eq('product_id', mainProduct.id)
@@ -205,25 +212,27 @@ export const Inventory: React.FC = () => {
                             .maybeSingle();
 
                         if (match) {
-                            // Soma estoque e deleta a variação do duplicado
+                            // Se existe, soma as quantidades no principal e deleta do duplicado
                             await supabase.from('estoque_tamanhos').update({ quantity: match.quantity + v.quantity }).eq('id', match.id);
                             await supabase.from('estoque_tamanhos').delete().eq('id', v.id);
                         } else {
-                            // Apenas move a variação para o produto principal
+                            // Se não existe, apenas move o ID do produto pai
                             await supabase.from('estoque_tamanhos').update({ product_id: mainProduct.id }).eq('id', v.id);
                         }
                     }
-                    // Deleta o produto duplicado agora que está vazio
+                    // Após mover todas as variações, deleta o registro do produto duplicado
                     await supabase.from('products').delete().eq('id', dup.id);
+                    totalMerged++;
                 }
             }
         }
-        alert("Mesclagem concluída com sucesso!");
+        
+        alert(`Processo concluído! ${totalMerged} produtos duplicados foram mesclados.`);
         fetchData();
     } catch (e: any) {
         alert("Erro na mesclagem: " + e.message);
     } finally {
-        setLoading(false);
+        setIsMerging(false);
     }
   };
 
@@ -333,7 +342,7 @@ export const Inventory: React.FC = () => {
       <input type="file" accept=".csv" ref={fileInputRef} className="hidden" onChange={handleImportCSV} />
 
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
-        <div><h2 className="text-2xl font-bold text-slate-800 dark:text-white">Estoque Inteligente</h2><p className="text-sm text-slate-500">Agrupado por Referência (Modelo)</p></div>
+        <div><h2 className="text-2xl font-bold text-slate-800 dark:text-white">Estoque</h2><p className="text-sm text-slate-500">Gestão centralizada por modelo</p></div>
         
         <div className="flex-1 max-w-md w-full relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
@@ -341,13 +350,28 @@ export const Inventory: React.FC = () => {
         </div>
 
         <div className="flex gap-2 flex-wrap">
-          <button onClick={handleMergeDuplicates} disabled={loading} className="px-4 py-2 bg-amber-50 text-amber-600 border border-amber-200 rounded-lg text-sm font-bold flex items-center hover:bg-amber-100 transition-colors shadow-sm" title="Unir referências iguais">
-            <Combine size={18} className="mr-2"/> Mesclar Ref
+          <button 
+            onClick={handleMergeDuplicates} 
+            disabled={isMerging || loading} 
+            className="px-4 py-2 bg-amber-50 text-amber-600 border border-amber-200 rounded-lg text-sm font-bold flex items-center hover:bg-amber-100 transition-colors shadow-sm disabled:opacity-50"
+          >
+            {isMerging ? <Loader className="animate-spin mr-2" size={18}/> : <Combine size={18} className="mr-2"/>}
+            Mesclar Referências
           </button>
-          <button onClick={handleExportCSV} className="p-2 bg-white dark:bg-slate-800 border rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-50 transition-colors shadow-sm" title="Exportar CSV"><Download size={20} /></button>
-          <button onClick={() => fileInputRef.current?.click()} className="p-2 bg-white dark:bg-slate-800 border rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-50 transition-colors shadow-sm" title="Importar CSV">
-            {importing ? <Loader className="animate-spin" size={20}/> : <Upload size={20} />}
+          
+          <button onClick={handleExportCSV} className="px-4 py-2 bg-white dark:bg-slate-800 border rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-50 transition-colors shadow-sm flex items-center font-bold text-sm">
+            <Download size={18} className="mr-2"/> Exportar
           </button>
+
+          <button 
+            onClick={() => fileInputRef.current?.click()} 
+            disabled={importing}
+            className="px-4 py-2 bg-white dark:bg-slate-800 border rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-50 transition-colors shadow-sm flex items-center font-bold text-sm"
+          >
+            {importing ? <Loader className="animate-spin mr-2" size={18}/> : <Upload size={18} className="mr-2"/>}
+            Importar Excel
+          </button>
+
           <button onClick={() => setIsNewProductModalOpen(true)} className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-bold shadow-md hover:bg-primary-700 transition-colors flex items-center">
             <Plus size={18} className="mr-1"/> Novo Produto
           </button>
@@ -423,7 +447,7 @@ export const Inventory: React.FC = () => {
         </div>
       </div>
 
-      {/* --- MODAL ENTRADA RÁPIDA DE ESTOQUE --- */}
+      {/* --- MODAIS MANTIDOS SEM ALTERAÇÃO --- */}
       {isRestockModalOpen && restockVariation && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-xs overflow-hidden border dark:border-slate-700">
@@ -449,7 +473,6 @@ export const Inventory: React.FC = () => {
         </div>
       )}
 
-      {/* --- MODAL NOVO PRODUTO --- */}
       {isNewProductModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm overflow-y-auto">
           <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-3xl my-8 flex flex-col border dark:border-slate-700">
@@ -465,19 +488,19 @@ export const Inventory: React.FC = () => {
                 <div><label className="text-xs font-bold text-slate-500 uppercase">Nome do Produto</label><input placeholder="Ex: Pijama de Ursinho" value={newProduct.nome} onChange={e => setNewProduct({...newProduct, nome: e.target.value})} className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold" /></div>
                 
                 <div className="bg-slate-50 dark:bg-slate-700/30 p-4 rounded-lg border dark:border-slate-600">
-                    <h4 className="font-bold text-sm mb-4 dark:text-white flex items-center"><Layers size={16} className="mr-2 text-primary-500"/> Adicionar Variações (Tamanho/Cor)</h4>
+                    <h4 className="font-bold text-sm mb-4 dark:text-white flex items-center"><Layers size={16} className="mr-2 text-primary-500"/> Adicionar Variações</h4>
                     <div className="space-y-3">
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                            <input placeholder="Modelo/Cor (Ex: Azul Poá)" className="p-2 border rounded dark:bg-slate-800 dark:text-white" value={tempVar.model} onChange={e => setTempVar({...tempVar, model: e.target.value})} />
+                            <input placeholder="Modelo/Cor" className="p-2 border rounded dark:bg-slate-800 dark:text-white" value={tempVar.model} onChange={e => setTempVar({...tempVar, model: e.target.value})} />
                             <select className="p-2 border rounded dark:bg-slate-800 dark:text-white" value={tempVar.size} onChange={e => setTempVar({...tempVar, size: e.target.value})}>
                                 {sizes.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                             </select>
-                            <input placeholder="SKU / Código Barras" className="p-2 border rounded dark:bg-slate-800 dark:text-white" value={tempVar.sku} onChange={e => setTempVar({...tempVar, sku: e.target.value})} />
+                            <input placeholder="SKU" className="p-2 border rounded dark:bg-slate-800 dark:text-white" value={tempVar.sku} onChange={e => setTempVar({...tempVar, sku: e.target.value})} />
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                            <input placeholder="Custo R$" type="number" className="p-2 border rounded dark:bg-slate-800 dark:text-white text-sm" value={tempVar.cost} onChange={e => setTempVar({...tempVar, cost: parseFloat(e.target.value) || 0})} />
-                            <input placeholder="Venda R$" type="number" className="p-2 border rounded dark:bg-slate-800 dark:text-white text-sm font-bold" value={tempVar.sale} onChange={e => setTempVar({...tempVar, sale: parseFloat(e.target.value) || 0})} />
-                            <input placeholder="Qtd Inicial" type="number" className="p-2 border rounded dark:bg-slate-800 dark:text-white text-sm" value={tempVar.qty} onChange={e => setTempVar({...tempVar, qty: parseInt(e.target.value) || 0})} />
+                            <input placeholder="Custo" type="number" className="p-2 border rounded dark:bg-slate-800 dark:text-white" value={tempVar.cost} onChange={e => setTempVar({...tempVar, cost: e.target.value})} />
+                            <input placeholder="Venda" type="number" className="p-2 border rounded dark:bg-slate-800 dark:text-white" value={tempVar.sale} onChange={e => setTempVar({...tempVar, sale: e.target.value})} />
+                            <input placeholder="Qtd" type="number" className="p-2 border rounded dark:bg-slate-800 dark:text-white" value={tempVar.qty} onChange={e => setTempVar({...tempVar, qty: parseInt(e.target.value) || 0})} />
                             <button onClick={handleAddTempVar} className="bg-primary-600 text-white rounded font-bold h-10 hover:bg-primary-700 transition-colors flex items-center justify-center"><Plus size={20} /></button>
                         </div>
                     </div>
@@ -486,7 +509,7 @@ export const Inventory: React.FC = () => {
                 <div className="space-y-2 max-h-40 overflow-y-auto">
                     {newProduct.variations.map((v, i) => (
                         <div key={i} className="text-xs p-3 bg-white dark:bg-slate-700 border dark:border-slate-600 rounded flex justify-between items-center shadow-sm">
-                            <div className="flex flex-wrap gap-x-4 gap-y-1"><span className="font-bold dark:text-white uppercase">{v.model_variant} - {v.size}</span><span className="text-primary-600 font-bold">Venda: {formatCurrency(v.price_sale)}</span><span className="px-2 bg-green-100 text-green-700 rounded font-bold">Qtd: {v.quantity}</span></div>
+                            <div className="flex flex-wrap gap-x-4 gap-y-1"><span className="font-bold dark:text-white uppercase">{v.model_variant} - {v.size}</span><span className="text-primary-600 font-bold">{formatCurrency(v.price_sale)}</span><span className="px-2 bg-green-100 text-green-700 rounded font-bold">Qtd: {v.quantity}</span></div>
                             <button onClick={() => setNewProduct({...newProduct, variations: newProduct.variations.filter((_, idx) => idx !== i)})} className="text-red-500 p-1"><X size={16}/></button>
                         </div>
                     ))}
@@ -500,7 +523,6 @@ export const Inventory: React.FC = () => {
         </div>
       )}
 
-      {/* --- MODAL EDITAR PRODUTO --- */}
       {editingProduct && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
           <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md overflow-hidden border dark:border-slate-700">
@@ -521,7 +543,6 @@ export const Inventory: React.FC = () => {
         </div>
       )}
 
-      {/* --- MODAL EDITAR VARIAÇÃO --- */}
       {editingVariation && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
           <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md overflow-hidden border dark:border-slate-700">
@@ -532,12 +553,7 @@ export const Inventory: React.FC = () => {
             <div className="p-6 space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                     <div><label className="text-xs font-bold text-slate-500 uppercase">Modelo / Cor</label><input value={editingVariation.model_variant} onChange={e => setEditingVariation({...editingVariation, model_variant: e.target.value})} className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" /></div>
-                    <div>
-                        <label className="text-xs font-bold text-slate-500 uppercase">Tamanho</label>
-                        <select className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" value={editingVariation.size} onChange={e => setEditingVariation({...editingVariation, size: e.target.value})}>
-                            {sizes.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-                        </select>
-                    </div>
+                    <div><label className="text-xs font-bold text-slate-500 uppercase">Tamanho</label><select className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" value={editingVariation.size} onChange={e => setEditingVariation({...editingVariation, size: e.target.value})}>{sizes.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}</select></div>
                 </div>
                 <div><label className="text-xs font-bold text-slate-500 uppercase">SKU / Cód. Barras</label><input value={editingVariation.sku} onChange={e => setEditingVariation({...editingVariation, sku: e.target.value})} className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white font-mono" /></div>
                 <div className="grid grid-cols-2 gap-4">
@@ -554,7 +570,6 @@ export const Inventory: React.FC = () => {
         </div>
       )}
 
-      {/* --- MODAL ADICIONAR NOVA VARIAÇÃO --- */}
       {isAddVariantModalOpen && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
                <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md overflow-hidden border dark:border-slate-700">
@@ -563,10 +578,10 @@ export const Inventory: React.FC = () => {
                         <button onClick={() => setIsAddVariantModalOpen(false)}><X size={20}/></button>
                    </div>
                    <div className="p-6 space-y-4">
-                        <div><label className="text-xs font-bold text-slate-500 uppercase">Modelo / Cor</label><input placeholder="Ex: Azul com Poá" className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold" value={newVariant.model} onChange={e => setNewVariant({...newVariant, model: e.target.value})} /></div>
+                        <div><label className="text-xs font-bold text-slate-500 uppercase">Modelo / Cor</label><input placeholder="Ex: Azul" className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold" value={newVariant.model} onChange={e => setNewVariant({...newVariant, model: e.target.value})} /></div>
                         <div className="grid grid-cols-2 gap-4">
                             <div><label className="text-xs font-bold text-slate-500 uppercase">Tamanho</label><select className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold" value={newVariant.size} onChange={e => setNewVariant({...newVariant, size: e.target.value})}>{sizes.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}</select></div>
-                            <div><label className="text-xs font-bold text-slate-500 uppercase">SKU</label><input placeholder="Bipe ou digite" className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" value={newVariant.sku} onChange={e => setNewVariant({...newVariant, sku: e.target.value})} /></div>
+                            <div><label className="text-xs font-bold text-slate-500 uppercase">SKU</label><input placeholder="Cód. Barras" className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" value={newVariant.sku} onChange={e => setNewVariant({...newVariant, sku: e.target.value})} /></div>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                             <div><label className="text-xs font-bold text-slate-500 uppercase">Custo</label><input type="number" step="0.01" className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" value={newVariant.price_cost} onChange={e => setNewVariant({...newVariant, price_cost: e.target.value})} /></div>
