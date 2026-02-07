@@ -169,65 +169,66 @@ export const Inventory: React.FC = () => {
       reader.readAsText(file);
   };
 
-  // --- MERGE LOGIC (Melhorada) ---
+  // --- MERGE LOGIC (Melhorada e mais robusta) ---
   const handleMergeDuplicates = async () => {
-    if (!confirm("Isso irá unir TODOS os produtos que possuem a mesma Referência exata. As quantidades serão somadas. Deseja continuar?")) return;
+    if (!confirm("Isso irá unir TODOS os produtos que possuem a mesma Referência. As quantidades serão somadas. Deseja continuar?")) return;
     
     setIsMerging(true);
     try {
-        // 1. Recarregar dados para garantir que não estamos usando estado antigo
         const { data: allProds } = await supabase.from('products').select('*');
         const { data: allVars } = await supabase.from('estoque_tamanhos').select('*');
         
-        if (!allProds) return;
+        if (!allProds || !allVars) return;
 
-        // 2. Agrupar produtos por modelo (TRIMMED e LOWERCASE para garantir match)
+        // Agrupar produtos por modelo (agressivo no trim e lowercase)
         const groups: Record<string, any[]> = {};
         allProds.forEach(p => {
             if (p.modelo) {
                 const key = p.modelo.toString().trim().toLowerCase();
                 if (!groups[key]) groups[key] = [];
-                groups[key].push({ ...p, variations: allVars?.filter(v => v.product_id === p.id) || [] });
+                groups[key].push({ ...p, variations: allVars.filter(v => v.product_id === p.id) });
             }
         });
 
         let totalMerged = 0;
 
-        for (const ref in groups) {
-            const list = groups[ref];
+        for (const refKey in groups) {
+            const list = groups[refKey];
             if (list.length > 1) {
-                // Manter o primeiro da lista como principal
+                // Manter o que tem o ID "menor" (geralmente o mais antigo) ou apenas o primeiro
                 const mainProduct = list[0];
                 const duplicates = list.slice(1);
 
                 for (const dup of duplicates) {
-                    // Mover variações do duplicado para o principal
+                    // Mover ou somar variações
                     for (const v of dup.variations) {
-                        // Verifica se o principal já tem essa combinação exata de Cor + Tamanho
-                        const { data: match } = await supabase.from('estoque_tamanhos')
-                            .select('id, quantity')
-                            .eq('product_id', mainProduct.id)
-                            .eq('model_variant', v.model_variant)
-                            .eq('size', v.size)
-                            .maybeSingle();
+                        // Verifica se o principal já tem essa combinação exata
+                        const match = allVars.find(mainVar => 
+                            mainVar.product_id === mainProduct.id && 
+                            mainVar.model_variant.trim().toLowerCase() === v.model_variant.trim().toLowerCase() && 
+                            mainVar.size === v.size
+                        );
 
                         if (match) {
-                            // Se existe, soma as quantidades no principal e deleta do duplicado
-                            await supabase.from('estoque_tamanhos').update({ quantity: match.quantity + v.quantity }).eq('id', match.id);
+                            // Soma quantidade e deleta do duplicado
+                            const newQty = (match.quantity || 0) + (v.quantity || 0);
+                            await supabase.from('estoque_tamanhos').update({ quantity: newQty }).eq('id', match.id);
                             await supabase.from('estoque_tamanhos').delete().eq('id', v.id);
+                            // Atualiza localmente o match para somas subsequentes no mesmo loop
+                            match.quantity = newQty;
                         } else {
-                            // Se não existe, apenas move o ID do produto pai
+                            // Apenas transfere o ID do produto pai
                             await supabase.from('estoque_tamanhos').update({ product_id: mainProduct.id }).eq('id', v.id);
                         }
                     }
-                    // Após mover todas as variações, deleta o registro do produto duplicado
+                    // Deleta o registro do produto agora vazio
                     await supabase.from('products').delete().eq('id', dup.id);
                     totalMerged++;
                 }
             }
         }
         
-        alert(`Processo concluído! ${totalMerged} produtos duplicados foram mesclados.`);
+        alert(`Processo concluído! ${totalMerged} produtos duplicados foram limpos e suas variantes unificadas.`);
         fetchData();
     } catch (e: any) {
         alert("Erro na mesclagem: " + e.message);
@@ -254,8 +255,8 @@ export const Inventory: React.FC = () => {
     if (!editingVariation) return;
     setLoading(true);
     const { error } = await supabase.from('estoque_tamanhos').update({ 
-        price_cost: editingVariation.price_cost, 
-        price_sale: editingVariation.price_sale, 
+        price_cost: parseCurrencyString(editingVariation.price_cost), 
+        price_sale: parseCurrencyString(editingVariation.price_sale), 
         quantity: editingVariation.quantity, 
         sku: editingVariation.sku,
         model_variant: editingVariation.model_variant,
@@ -297,10 +298,10 @@ export const Inventory: React.FC = () => {
         ...prev,
         variations: [...prev.variations, {
             model_variant: tempVar.model, size: tempVar.size, sku: tempVar.sku, quantity: tempVar.qty,
-            price_cost: parseCurrencyString(tempVar.cost.toString()), price_sale: parseCurrencyString(tempVar.sale.toString())
+            price_cost: parseCurrencyString(tempVar.cost), price_sale: parseCurrencyString(tempVar.sale)
         }]
     }));
-    setTempVar(prev => ({ ...prev, sku: '' }));
+    setTempVar(prev => ({ ...prev, sku: '', cost: '', sale: '', qty: 0 }));
   };
 
   const saveNewProduct = async () => {
@@ -330,7 +331,8 @@ export const Inventory: React.FC = () => {
       setLoading(true);
       const { error } = await supabase.from('estoque_tamanhos').insert({ 
           product_id: newVariant.productId, model_variant: newVariant.model, size: newVariant.size, 
-          sku: newVariant.sku, quantity: newVariant.quantity, price_cost: parseCurrencyString(newVariant.price_cost), 
+          sku: newVariant.sku, quantity: newVariant.quantity, 
+          price_cost: parseCurrencyString(newVariant.price_cost), 
           price_sale: parseCurrencyString(newVariant.price_sale) 
       });
       if (!error) { setIsAddVariantModalOpen(false); fetchData(); }
@@ -447,7 +449,7 @@ export const Inventory: React.FC = () => {
         </div>
       </div>
 
-      {/* --- MODAIS MANTIDOS SEM ALTERAÇÃO --- */}
+      {/* --- MODAL ENTRADA RÁPIDA DE ESTOQUE --- */}
       {isRestockModalOpen && restockVariation && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-xs overflow-hidden border dark:border-slate-700">
@@ -498,8 +500,8 @@ export const Inventory: React.FC = () => {
                             <input placeholder="SKU" className="p-2 border rounded dark:bg-slate-800 dark:text-white" value={tempVar.sku} onChange={e => setTempVar({...tempVar, sku: e.target.value})} />
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                            <input placeholder="Custo" type="number" className="p-2 border rounded dark:bg-slate-800 dark:text-white" value={tempVar.cost} onChange={e => setTempVar({...tempVar, cost: e.target.value})} />
-                            <input placeholder="Venda" type="number" className="p-2 border rounded dark:bg-slate-800 dark:text-white" value={tempVar.sale} onChange={e => setTempVar({...tempVar, sale: e.target.value})} />
+                            <input placeholder="Custo" type="text" className="p-2 border rounded dark:bg-slate-800 dark:text-white" value={tempVar.cost} onChange={e => setTempVar({...tempVar, cost: e.target.value})} />
+                            <input placeholder="Venda" type="text" className="p-2 border rounded dark:bg-slate-800 dark:text-white font-bold" value={tempVar.sale} onChange={e => setTempVar({...tempVar, sale: e.target.value})} />
                             <input placeholder="Qtd" type="number" className="p-2 border rounded dark:bg-slate-800 dark:text-white" value={tempVar.qty} onChange={e => setTempVar({...tempVar, qty: parseInt(e.target.value) || 0})} />
                             <button onClick={handleAddTempVar} className="bg-primary-600 text-white rounded font-bold h-10 hover:bg-primary-700 transition-colors flex items-center justify-center"><Plus size={20} /></button>
                         </div>
@@ -557,8 +559,8 @@ export const Inventory: React.FC = () => {
                 </div>
                 <div><label className="text-xs font-bold text-slate-500 uppercase">SKU / Cód. Barras</label><input value={editingVariation.sku} onChange={e => setEditingVariation({...editingVariation, sku: e.target.value})} className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white font-mono" /></div>
                 <div className="grid grid-cols-2 gap-4">
-                    <div><label className="text-xs font-bold text-slate-500 uppercase">Custo (R$)</label><input type="number" step="0.01" value={editingVariation.price_cost} onChange={e => setEditingVariation({...editingVariation, price_cost: parseFloat(e.target.value) || 0})} className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" /></div>
-                    <div><label className="text-xs font-bold text-slate-500 uppercase">Venda (R$)</label><input type="number" step="0.01" value={editingVariation.price_sale} onChange={e => setEditingVariation({...editingVariation, price_sale: parseFloat(e.target.value) || 0})} className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold text-primary-600" /></div>
+                    <div><label className="text-xs font-bold text-slate-500 uppercase">Custo (R$)</label><input type="text" value={editingVariation.price_cost} onChange={e => setEditingVariation({...editingVariation, price_cost: e.target.value as any})} className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" /></div>
+                    <div><label className="text-xs font-bold text-slate-500 uppercase">Venda (R$)</label><input type="text" value={editingVariation.price_sale} onChange={e => setEditingVariation({...editingVariation, price_sale: e.target.value as any})} className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold text-primary-600" /></div>
                 </div>
                 <div><label className="text-xs font-bold text-slate-500 uppercase">Qtd Atual</label><input type="number" value={editingVariation.quantity} onChange={e => setEditingVariation({...editingVariation, quantity: parseInt(e.target.value) || 0})} className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold" /></div>
             </div>
@@ -584,8 +586,8 @@ export const Inventory: React.FC = () => {
                             <div><label className="text-xs font-bold text-slate-500 uppercase">SKU</label><input placeholder="Cód. Barras" className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" value={newVariant.sku} onChange={e => setNewVariant({...newVariant, sku: e.target.value})} /></div>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
-                            <div><label className="text-xs font-bold text-slate-500 uppercase">Custo</label><input type="number" step="0.01" className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" value={newVariant.price_cost} onChange={e => setNewVariant({...newVariant, price_cost: e.target.value})} /></div>
-                            <div><label className="text-xs font-bold text-slate-500 uppercase">Venda</label><input type="number" step="0.01" className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold" value={newVariant.price_sale} onChange={e => setNewVariant({...newVariant, price_sale: e.target.value})} /></div>
+                            <div><label className="text-xs font-bold text-slate-500 uppercase">Custo</label><input type="text" className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" value={newVariant.price_cost} onChange={e => setNewVariant({...newVariant, price_cost: e.target.value})} /></div>
+                            <div><label className="text-xs font-bold text-slate-500 uppercase">Venda</label><input type="text" className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold" value={newVariant.price_sale} onChange={e => setNewVariant({...newVariant, price_sale: e.target.value})} /></div>
                         </div>
                         <div><label className="text-xs font-bold text-slate-500 uppercase">Quantidade Inicial</label><input type="number" className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" value={newVariant.quantity} onChange={e => setNewVariant({...newVariant, quantity: parseInt(e.target.value) || 0})} /></div>
                    </div>

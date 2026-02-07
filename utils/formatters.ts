@@ -6,10 +6,24 @@ export const formatCurrency = (value: number) => {
   }).format(value);
 };
 
-export const parseCurrencyString = (value: string): number => {
+export const parseCurrencyString = (value: string | number): number => {
+  if (typeof value === 'number') return value;
   if (!value) return 0;
-  // Remove currency symbol, spaces, and convert comma to dot
-  const cleanStr = value.replace(/[R$\s]/g, '').replace(/\./g, '').replace(',', '.');
+  
+  // Remove R$, espaços e símbolos indesejados
+  let cleanStr = value.toString().replace(/[R$\s]/g, '').trim();
+
+  // Se a string contiver vírgula e ponto (ex: 1.234,56), é formato BR clássico
+  if (cleanStr.includes(',') && cleanStr.includes('.')) {
+    cleanStr = cleanStr.replace(/\./g, '').replace(',', '.');
+  } 
+  // Se contiver apenas vírgula (ex: 10,30), substitui por ponto
+  else if (cleanStr.includes(',') && !cleanStr.includes('.')) {
+    cleanStr = cleanStr.replace(',', '.');
+  }
+  // Se contiver apenas um ponto e este ponto for separador de decimal (ex: 10.30)
+  // não removemos nada, o parseFloat já entende.
+
   const num = parseFloat(cleanStr);
   return isNaN(num) ? 0 : num;
 };
