@@ -4,6 +4,7 @@ import { supabase } from '../supabaseClient';
 import { Client } from '../types';
 import { Search, Plus, FileSpreadsheet, Download, Upload, Edit2, Trash2, X, Save, Loader, MapPin, Phone, Mail, User } from 'lucide-react';
 import { maskCPF, maskPhone } from '../utils/formatters';
+import * as XLSX from 'xlsx';
 
 export const Clients: React.FC = () => {
   const [clients, setClients] = useState<Client[]>([]);
@@ -77,89 +78,71 @@ export const Clients: React.FC = () => {
     else alert("Erro ao excluir. O cliente pode ter vendas vinculadas.");
   };
 
-  // --- CSV LOGIC ---
+  // --- EXCEL LOGIC ---
+  const handleExportExcel = () => {
+    const data = clients.map(c => ({
+      "Nome Completo": c.full_name,
+      "CPF": c.cpf,
+      "Telefone": c.phone,
+      "E-mail": c.email,
+      "Endereço": c.address
+    }));
 
-  const handleExportCSV = () => {
-    const header = "Nome,CPF,Telefone,Email,Endereco\n";
-    const rows = clients.map(c => {
-      // Escape quotes for CSV format
-      const escape = (txt: string) => `"${(txt || '').replace(/"/g, '""')}"`;
-      return `${escape(c.full_name)},${escape(c.cpf)},${escape(c.phone)},${escape(c.email)},${escape(c.address)}`;
-    }).join("\n");
-
-    const blob = new Blob([header + rows], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', 'clientes_pijama_pro.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Clientes");
+    XLSX.writeFile(wb, "clientes_pijama_pro.xlsx");
   };
 
-  const parseCSVLine = (text: string) => {
-    const result = [];
-    let cell = '';
-    let inQuotes = false;
-    for (let i = 0; i < text.length; i++) {
-        const char = text[i];
-        if (char === '"') inQuotes = !inQuotes;
-        else if (char === ',' && !inQuotes) { result.push(cell.trim()); cell = ''; }
-        else cell += char;
-    }
-    result.push(cell.trim());
-    return result.map(c => c.replace(/^"|"$/g, '').trim()); // Remove surrounding quotes
-  };
-
-  const handleImportCSV = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportExcel = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     setImporting(true);
     const reader = new FileReader();
     reader.onload = async (e) => {
-      const text = e.target?.result as string;
-      if (!text) return;
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(worksheet) as any[];
 
-      const lines = text.split('\n');
-      let success = 0;
-      let errors = 0;
+        let success = 0;
+        let errors = 0;
 
-      // Skip header if it contains "Nome"
-      const startIndex = lines[0].toLowerCase().includes('nome') ? 1 : 0;
-
-      for (let i = startIndex; i < lines.length; i++) {
-        const line = lines[i].replace(/\r$/, '').trim();
-        if (!line) continue;
-
-        try {
-          const cols = parseCSVLine(line);
-          // Expected: Nome, CPF, Telefone, Email, Endereco
-          if (cols.length < 1) continue;
-
-          const [nome, cpf, tel, email, end] = cols;
+        for (const row of rows) {
+          const nome = row["Nome Completo"] || row["Nome"] || "";
+          const cpf = row["CPF"]?.toString() || "";
+          const tel = row["Telefone"]?.toString() || row["Celular"]?.toString() || "";
+          const email = row["E-mail"]?.toString() || row["Email"]?.toString() || "";
+          const end = row["Endereço"]?.toString() || row["Endereco"]?.toString() || "";
 
           if (nome) {
             await supabase.from('clients').insert({
               full_name: nome,
-              cpf: cpf || '',
-              phone: tel || '',
-              email: email || '',
-              address: end || ''
+              cpf: cpf,
+              phone: tel,
+              email: email,
+              address: end
             });
             success++;
+          } else {
+            errors++;
           }
-        } catch (err) {
-          errors++;
         }
-      }
 
-      alert(`Importação finalizada!\nImportados: ${success}\nErros: ${errors}`);
-      setImporting(false);
-      fetchClients();
-      if (fileInputRef.current) fileInputRef.current.value = '';
+        alert(`Importação finalizada!\nImportados: ${success}\nErros/Ignorados: ${errors}`);
+      } catch (err) {
+        alert("Erro ao ler o arquivo Excel.");
+        console.error(err);
+      } finally {
+        setImporting(false);
+        fetchClients();
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
     };
-    reader.readAsText(file);
+    reader.readAsArrayBuffer(file);
   };
 
   // --- RENDER ---
@@ -171,7 +154,7 @@ export const Clients: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <input type="file" accept=".csv" ref={fileInputRef} className="hidden" onChange={handleImportCSV} />
+      <input type="file" accept=".xlsx, .xls" ref={fileInputRef} className="hidden" onChange={handleImportExcel} />
 
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
@@ -180,10 +163,10 @@ export const Clients: React.FC = () => {
         </div>
 
         <div className="flex gap-2 w-full md:w-auto">
-          <button onClick={handleExportCSV} className="p-2 text-slate-600 bg-white border rounded hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700" title="Exportar CSV">
+          <button onClick={handleExportExcel} className="p-2 text-slate-600 bg-white border rounded hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700" title="Exportar Excel">
             <Download size={20} />
           </button>
-          <button onClick={() => fileInputRef.current?.click()} disabled={importing} className="p-2 text-slate-600 bg-white border rounded hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700" title="Importar CSV">
+          <button onClick={() => fileInputRef.current?.click()} disabled={importing} className="p-2 text-slate-600 bg-white border rounded hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700" title="Importar Excel">
             {importing ? <Loader className="animate-spin" size={20}/> : <Upload size={20} />}
           </button>
           <button onClick={() => handleOpenModal()} className="flex items-center px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-700 font-medium">

@@ -4,6 +4,7 @@ import { supabase } from '../supabaseClient';
 import { Product, ProductVariation, ProductSize } from '../types';
 import { ChevronDown, ChevronRight, Plus, AlertTriangle, Loader, Trash2, Edit2, X, Save, Search, Download, Layers, Settings as SettingsIcon, Package, PlusCircle, Upload, Combine } from 'lucide-react';
 import { formatCurrency, parseCurrencyString } from '../utils/formatters';
+import * as XLSX from 'xlsx';
 
 type SortField = 'modelo' | 'nome' | 'categoria' | 'stock';
 
@@ -80,96 +81,108 @@ export const Inventory: React.FC = () => {
     });
   }, [products, searchQuery, sortConfig]);
 
-  // --- CSV LOGIC ---
-  const handleExportCSV = () => {
-      const header = "SKU,Referencia,Nome,Modelo_Cor,Categoria,Tamanho,Quantidade,Preco_Custo,Preco_Venda\n";
-      const rows: string[] = [];
-      products.forEach(p => {
-          p.variations?.forEach(v => {
-              const escape = (t: any) => `"${(t || '').toString().replace(/"/g, '""')}"`;
-              const row = [escape(v.sku), escape(p.modelo), escape(p.nome), escape(v.model_variant), escape(p.categoria), escape(v.size), v.quantity, v.price_cost.toFixed(2), v.price_sale.toFixed(2)].join(',');
-              rows.push(row);
-          });
-      });
-      const blob = new Blob([header + rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `estoque_${new Date().toISOString().slice(0,10)}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+  // --- EXCEL LOGIC ---
+  const handleExportExcel = () => {
+      const data = products.flatMap(p => 
+        (p.variations || []).map(v => ({
+            "SKU": v.sku,
+            "Referência": p.modelo,
+            "Nome": p.nome,
+            "Modelo/Cor": v.model_variant,
+            "Categoria": p.categoria,
+            "Tamanho": v.size,
+            "Quantidade": v.quantity,
+            "Preço Custo": v.price_cost,
+            "Preço Venda": v.price_sale
+        }))
+      );
+
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Estoque");
+      XLSX.writeFile(wb, `estoque_${new Date().toISOString().slice(0,10)}.xlsx`);
   };
 
-  const handleImportCSV = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportExcel = async (event: React.ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
       if (!file) return;
 
       setImporting(true);
       const reader = new FileReader();
       reader.onload = async (e) => {
-          const text = e.target?.result as string;
-          if (!text) return;
+          try {
+              const data = new Uint8Array(e.target?.result as ArrayBuffer);
+              const workbook = XLSX.read(data, { type: 'array' });
+              const sheetName = workbook.SheetNames[0];
+              const worksheet = workbook.Sheets[sheetName];
+              const rows = XLSX.utils.sheet_to_json(worksheet) as any[];
 
-          const lines = text.split('\n');
-          let success = 0;
-          const startIndex = lines[0].toLowerCase().includes('sku') ? 1 : 0;
+              let success = 0;
+              for (const row of rows) {
+                  const sku = row["SKU"]?.toString() || "";
+                  const ref = row["Referência"]?.toString() || row["Referencia"]?.toString() || "";
+                  const nome = row["Nome"]?.toString() || "";
+                  const cor = row["Modelo/Cor"]?.toString() || row["Cor"]?.toString() || "Padrão";
+                  const cat = row["Categoria"]?.toString() || "Geral";
+                  const tam = row["Tamanho"]?.toString() || "";
+                  const qtd = parseInt(row["Quantidade"]) || 0;
+                  const custo = parseCurrencyString(row["Preço Custo"] || row["Preco Custo"] || 0);
+                  const venda = parseCurrencyString(row["Preço Venda"] || row["Preco Venda"] || 0);
 
-          for (let i = startIndex; i < lines.length; i++) {
-              const line = lines[i].trim();
-              if (!line) continue;
-              
-              const cols = line.split(',').map(c => c.replace(/^"|"$/g, '').trim());
-              if (cols.length < 3) continue;
+                  if (!nome || !ref) continue;
 
-              const [sku, ref, nome, cor, cat, tam, qtd, custo, venda] = cols;
-
-              let productId = '';
-              const { data: existingProd } = await supabase.from('products').select('id').eq('nome', nome).eq('modelo', ref).maybeSingle();
-              
-              if (existingProd) {
-                  productId = existingProd.id;
-              } else {
-                  const { data: newP } = await supabase.from('products').insert({ nome, modelo: ref, categoria: cat || 'Geral' }).select().single();
-                  if (newP) productId = newP.id;
-              }
-
-              if (productId) {
-                  const { data: existingVar } = await supabase.from('estoque_tamanhos')
-                      .select('id, quantity')
-                      .eq('product_id', productId)
-                      .eq('model_variant', cor || 'Padrão')
-                      .eq('size', tam)
-                      .maybeSingle();
-
-                  if (existingVar) {
-                      await supabase.from('estoque_tamanhos').update({ 
-                          quantity: existingVar.quantity + (parseInt(qtd) || 0),
-                          price_cost: parseFloat(custo) || 0,
-                          price_sale: parseFloat(venda) || 0
-                      }).eq('id', existingVar.id);
+                  let productId = '';
+                  const { data: existingProd } = await supabase.from('products').select('id').eq('nome', nome).eq('modelo', ref).maybeSingle();
+                  
+                  if (existingProd) {
+                      productId = existingProd.id;
                   } else {
-                      await supabase.from('estoque_tamanhos').insert({
-                          product_id: productId,
-                          model_variant: cor || 'Padrão',
-                          size: tam,
-                          sku: sku || '',
-                          quantity: parseInt(qtd) || 0,
-                          price_cost: parseFloat(custo) || 0,
-                          price_sale: parseFloat(venda) || 0
-                      });
+                      const { data: newP } = await supabase.from('products').insert({ nome, modelo: ref, categoria: cat }).select().single();
+                      if (newP) productId = newP.id;
                   }
-                  success++;
+
+                  if (productId) {
+                      const { data: existingVar } = await supabase.from('estoque_tamanhos')
+                          .select('id, quantity')
+                          .eq('product_id', productId)
+                          .eq('model_variant', cor)
+                          .eq('size', tam)
+                          .maybeSingle();
+
+                      if (existingVar) {
+                          await supabase.from('estoque_tamanhos').update({ 
+                              quantity: existingVar.quantity + qtd,
+                              price_cost: custo,
+                              price_sale: venda
+                          }).eq('id', existingVar.id);
+                      } else {
+                          await supabase.from('estoque_tamanhos').insert({
+                              product_id: productId,
+                              model_variant: cor,
+                              size: tam,
+                              sku: sku,
+                              quantity: qtd,
+                              price_cost: custo,
+                              price_sale: venda
+                          });
+                      }
+                      success++;
+                  }
               }
+              alert(`Importação concluída: ${success} registros processados.`);
+          } catch (err) {
+              alert("Erro ao processar o arquivo Excel. Verifique o formato.");
+              console.error(err);
+          } finally {
+              setImporting(false);
+              fetchData();
+              if (fileInputRef.current) fileInputRef.current.value = '';
           }
-          alert(`Importação concluída: ${success} registros processados.`);
-          setImporting(false);
-          fetchData();
       };
-      reader.readAsText(file);
+      reader.readAsArrayBuffer(file);
   };
 
-  // --- MERGE LOGIC (Melhorada e mais robusta) ---
+  // --- MERGE LOGIC ---
   const handleMergeDuplicates = async () => {
     if (!confirm("Isso irá unir TODOS os produtos que possuem a mesma Referência. As quantidades serão somadas. Deseja continuar?")) return;
     
@@ -180,7 +193,6 @@ export const Inventory: React.FC = () => {
         
         if (!allProds || !allVars) return;
 
-        // Agrupar produtos por modelo (agressivo no trim e lowercase)
         const groups: Record<string, any[]> = {};
         allProds.forEach(p => {
             if (p.modelo) {
@@ -195,14 +207,11 @@ export const Inventory: React.FC = () => {
         for (const refKey in groups) {
             const list = groups[refKey];
             if (list.length > 1) {
-                // Manter o que tem o ID "menor" (geralmente o mais antigo) ou apenas o primeiro
                 const mainProduct = list[0];
                 const duplicates = list.slice(1);
 
                 for (const dup of duplicates) {
-                    // Mover ou somar variações
                     for (const v of dup.variations) {
-                        // Verifica se o principal já tem essa combinação exata
                         const match = allVars.find(mainVar => 
                             mainVar.product_id === mainProduct.id && 
                             mainVar.model_variant.trim().toLowerCase() === v.model_variant.trim().toLowerCase() && 
@@ -210,25 +219,21 @@ export const Inventory: React.FC = () => {
                         );
 
                         if (match) {
-                            // Soma quantidade e deleta do duplicado
                             const newQty = (match.quantity || 0) + (v.quantity || 0);
                             await supabase.from('estoque_tamanhos').update({ quantity: newQty }).eq('id', match.id);
                             await supabase.from('estoque_tamanhos').delete().eq('id', v.id);
-                            // Atualiza localmente o match para somas subsequentes no mesmo loop
                             match.quantity = newQty;
                         } else {
-                            // Apenas transfere o ID do produto pai
                             await supabase.from('estoque_tamanhos').update({ product_id: mainProduct.id }).eq('id', v.id);
                         }
                     }
-                    // Deleta o registro do produto agora vazio
                     await supabase.from('products').delete().eq('id', dup.id);
                     totalMerged++;
                 }
             }
         }
         
-        alert(`Processo concluído! ${totalMerged} produtos duplicados foram limpos e suas variantes unificadas.`);
+        alert(`Processo concluído! ${totalMerged} produtos duplicados foram limpos.`);
         fetchData();
     } catch (e: any) {
         alert("Erro na mesclagem: " + e.message);
@@ -341,7 +346,7 @@ export const Inventory: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <input type="file" accept=".csv" ref={fileInputRef} className="hidden" onChange={handleImportCSV} />
+      <input type="file" accept=".xlsx, .xls" ref={fileInputRef} className="hidden" onChange={handleImportExcel} />
 
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
         <div><h2 className="text-2xl font-bold text-slate-800 dark:text-white">Estoque</h2><p className="text-sm text-slate-500">Gestão centralizada por modelo</p></div>
@@ -361,8 +366,8 @@ export const Inventory: React.FC = () => {
             Mesclar Referências
           </button>
           
-          <button onClick={handleExportCSV} className="px-4 py-2 bg-white dark:bg-slate-800 border rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-50 transition-colors shadow-sm flex items-center font-bold text-sm">
-            <Download size={18} className="mr-2"/> Exportar
+          <button onClick={handleExportExcel} className="px-4 py-2 bg-white dark:bg-slate-800 border rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-50 transition-colors shadow-sm flex items-center font-bold text-sm">
+            <Download size={18} className="mr-2"/> Exportar Excel
           </button>
 
           <button 
@@ -449,7 +454,7 @@ export const Inventory: React.FC = () => {
         </div>
       </div>
 
-      {/* --- MODAL ENTRADA RÁPIDA DE ESTOQUE --- */}
+      {/* --- MODAIS --- */}
       {isRestockModalOpen && restockVariation && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-xs overflow-hidden border dark:border-slate-700">
