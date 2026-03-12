@@ -444,7 +444,66 @@ export const Settings: React.FC = () => {
           </div>
       )}
       
-      {/* --- MODAIS DE TAMANHO E PAGAMENTO MANTIDOS --- */}
+      {/* --- MODAIS DE USUÁRIO, TAMANHO E PAGAMENTO --- */}
+      {isUserModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden border dark:border-slate-700 animate-in zoom-in-95 duration-200">
+                  <div className="p-6 border-b dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
+                      <h3 className="text-lg font-bold dark:text-white">{editingUser ? 'Editar Usuário' : 'Novo Usuário'}</h3>
+                      <button onClick={() => setIsUserModalOpen(false)}><X size={20} className="text-slate-400"/></button>
+                  </div>
+                  <div className="p-6 space-y-4">
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Nome de Usuário</label>
+                          <input 
+                            value={userForm.username} 
+                            onChange={e => setUserForm({...userForm, username: e.target.value})} 
+                            className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold" 
+                            placeholder="Ex: joao.silva" 
+                          />
+                      </div>
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Senha</label>
+                          <div className="relative">
+                              <input 
+                                type={showUserPassword ? "text" : "password"}
+                                value={userForm.password} 
+                                onChange={e => setUserForm({...userForm, password: e.target.value})} 
+                                className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white" 
+                                placeholder="••••••••" 
+                              />
+                              <button 
+                                type="button"
+                                onClick={() => setShowUserPassword(!showUserPassword)}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                              >
+                                {showUserPassword ? <EyeOff size={18}/> : <Eye size={18}/>}
+                              </button>
+                          </div>
+                      </div>
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Cargo / Permissão</label>
+                          <select 
+                            value={userForm.role} 
+                            onChange={e => setUserForm({...userForm, role: e.target.value as any})} 
+                            className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                          >
+                              <option value="employee">Funcionário</option>
+                              <option value="admin">Administrador</option>
+                          </select>
+                      </div>
+                  </div>
+                  <div className="p-6 border-t dark:border-slate-700 flex justify-end gap-3 bg-slate-50 dark:bg-slate-900/50">
+                        <button onClick={() => setIsUserModalOpen(false)} className="px-4 py-2 text-slate-500 font-medium">Cancelar</button>
+                        <button onClick={handleSaveUser} disabled={loading} className="px-6 py-2 bg-primary-600 text-white rounded-lg font-bold flex items-center gap-2 shadow-lg hover:bg-primary-700">
+                            {loading ? <Loader className="animate-spin" size={16}/> : <Save size={16}/>} 
+                            Salvar
+                        </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {isSizeModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
               <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden border dark:border-slate-700 animate-in zoom-in-95 duration-200">

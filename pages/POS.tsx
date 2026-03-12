@@ -564,6 +564,43 @@ export const POS: React.FC = () => {
                         )}
                     </div>
                 )}
+                <div className="bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg mb-4 border dark:border-slate-600">
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2 text-center">Desconto na Venda</label>
+                    <div className="flex gap-2">
+                        <div className="flex border dark:border-slate-600 rounded overflow-hidden h-10">
+                            <button 
+                                onClick={() => setDiscountType('money')}
+                                className={`px-3 flex items-center justify-center font-bold transition-colors ${discountType === 'money' ? 'bg-primary-600 text-white' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
+                            >
+                                R$
+                            </button>
+                            <button 
+                                onClick={() => setDiscountType('percent')}
+                                className={`px-3 flex items-center justify-center font-bold transition-colors ${discountType === 'percent' ? 'bg-primary-600 text-white' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
+                            >
+                                %
+                            </button>
+                        </div>
+                        <div className="relative flex-1">
+                            <input 
+                                type="text"
+                                className="w-full h-10 p-2 pl-8 text-lg border rounded dark:bg-slate-800 dark:border-slate-600 dark:text-white font-bold focus:ring-2 focus:ring-primary-500 outline-none"
+                                placeholder="0,00"
+                                value={discountVal}
+                                onChange={e => setDiscountVal(e.target.value)}
+                            />
+                            <div className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400">
+                                {discountType === 'money' ? <DollarSign size={16} /> : <Percent size={16} />}
+                            </div>
+                        </div>
+                    </div>
+                    {calculatedDiscountValue > 0 && (
+                        <p className="text-[10px] text-red-500 font-bold mt-1 text-right">
+                            Desconto aplicado: -{formatCurrency(calculatedDiscountValue)}
+                        </p>
+                    )}
+                </div>
+
                 <div className="bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg mb-6 border dark:border-slate-600 text-center">
                     <p className="text-sm text-slate-500 uppercase tracking-wide">Valor Final</p>
                     <p className="text-4xl font-bold mt-1 dark:text-white">{formatCurrency(finalTotal)}</p>

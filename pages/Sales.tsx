@@ -213,7 +213,22 @@ export const Sales: React.FC = () => {
                         <div className="py-4"><p className="font-bold dark:text-white">{selectedSale.client?.full_name || 'Consumidor'}</p><p className="text-sm dark:text-slate-400">{selectedSale.client?.phone}</p></div>
                         <table className="w-full text-sm my-4 border-t pt-4 dark:border-slate-700">
                             <tbody>{selectedSale.items?.map((item: any, i: number) => (
-                                <tr key={i} className="border-b dark:border-slate-700"><td className="py-2 dark:text-white">{item.quantity}x {item.product_variation?.products?.nome}</td><td className="text-right dark:text-white">{formatCurrency(item.unit_price * item.quantity)}</td></tr>
+                                <tr key={i} className="border-b dark:border-slate-700">
+                                    <td className="py-2 dark:text-white">
+                                        <div className="font-bold">{item.quantity}x {item.product_variation?.products?.nome}</div>
+                                        <div className="text-[10px] text-slate-500 dark:text-slate-400 flex gap-2">
+                                            <span><b>Modelo:</b> {item.product_variation?.model_variant}</span>
+                                            <span>|</span>
+                                            <span><b>Tam:</b> {item.product_variation?.size}</span>
+                                            <span>|</span>
+                                            <span><b>SKU:</b> {item.product_variation?.sku}</span>
+                                        </div>
+                                    </td>
+                                    <td className="text-right dark:text-white font-mono">
+                                        {formatCurrency(item.unit_price * item.quantity)}
+                                        <div className="text-[10px] text-slate-400">un: {formatCurrency(item.unit_price)}</div>
+                                    </td>
+                                </tr>
                             ))}</tbody>
                         </table>
                         <div className="text-right border-t pt-4 dark:border-slate-700"><p className="text-2xl font-bold text-primary-600">{formatCurrency(selectedSale.total_value)}</p></div>
