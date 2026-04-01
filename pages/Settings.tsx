@@ -395,6 +395,77 @@ export const Settings: React.FC = () => {
           </div>
       )}
 
+      {activeTab === 'sizes' && !user?.isBootstrap && (
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow border dark:border-slate-700 overflow-hidden animate-in fade-in duration-300">
+              <div className="p-6 border-b dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
+                  <h3 className="font-bold dark:text-white flex items-center gap-2"><Maximize2 className="text-primary-600" size={24}/> Grade de Tamanhos</h3>
+                  <button onClick={() => handleOpenSizeModal()} className="flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg font-bold text-sm shadow-sm hover:bg-primary-700"><Plus size={18} className="mr-1"/> Novo Tamanho</button>
+              </div>
+              <table className="w-full text-left">
+                  <thead className="bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 text-xs uppercase font-bold">
+                      <tr><th className="p-4">Ordem</th><th className="p-4">Tamanho (Sigla)</th><th className="p-4 text-center">Ações</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                      {sizes.map(s => (
+                          <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                              <td className="p-4 font-mono text-xs text-slate-400">{s.sort_order}</td>
+                              <td className="p-4 font-bold dark:text-white">{s.name}</td>
+                              <td className="p-4 text-center">
+                                  <div className="flex justify-center gap-1">
+                                      <button onClick={() => handleOpenSizeModal(s)} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"><Edit2 size={16}/></button>
+                                      <button onClick={() => handleDeleteSize(s.id)} className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"><Trash2 size={16}/></button>
+                                  </div>
+                              </td>
+                          </tr>
+                      ))}
+                      {sizes.length === 0 && (
+                          <tr><td colSpan={3} className="p-8 text-center text-slate-400 italic">Nenhum tamanho cadastrado.</td></tr>
+                      )}
+                  </tbody>
+              </table>
+          </div>
+      )}
+
+      {activeTab === 'payments' && !user?.isBootstrap && (
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow border dark:border-slate-700 overflow-hidden animate-in fade-in duration-300">
+              <div className="p-6 border-b dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
+                  <h3 className="font-bold dark:text-white flex items-center gap-2"><CreditCard className="text-primary-600" size={24}/> Métodos de Pagamento</h3>
+                  <button onClick={() => handleOpenPaymentModal()} className="flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg font-bold text-sm shadow-sm hover:bg-primary-700"><Plus size={18} className="mr-1"/> Novo Método</button>
+              </div>
+              <table className="w-full text-left">
+                  <thead className="bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 text-xs uppercase font-bold">
+                      <tr><th className="p-4">Nome</th><th className="p-4">Tipo</th><th className="p-4">Status</th><th className="p-4 text-center">Ações</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                      {paymentMethods.map(m => (
+                          <tr key={m.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                              <td className="p-4 font-bold dark:text-white">{m.name}</td>
+                              <td className="p-4 uppercase text-[10px] font-bold text-slate-500">{m.type}</td>
+                              <td className="p-4">
+                                  <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${m.active ? 'bg-green-100 text-green-700 dark:bg-green-900/30' : 'bg-slate-100 text-slate-500 dark:bg-slate-700/50'}`}>
+                                      {m.active ? 'Ativo' : 'Inativo'}
+                                  </span>
+                              </td>
+                              <td className="p-4 text-center">
+                                  <div className="flex justify-center gap-1">
+                                      <button onClick={() => handleOpenPaymentModal(m)} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"><Edit2 size={16}/></button>
+                                      <button onClick={async () => {
+                                          if(!confirm("Excluir método?")) return;
+                                          await supabase.from('payment_methods').delete().eq('id', m.id);
+                                          fetchPaymentMethods();
+                                      }} className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"><Trash2 size={16}/></button>
+                                  </div>
+                              </td>
+                          </tr>
+                      ))}
+                      {paymentMethods.length === 0 && (
+                          <tr><td colSpan={4} className="p-8 text-center text-slate-400 italic">Nenhum método cadastrado.</td></tr>
+                      )}
+                  </tbody>
+              </table>
+          </div>
+      )}
+
       {activeTab === 'database' && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
               <div className="bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-xl p-8 shadow-lg">
