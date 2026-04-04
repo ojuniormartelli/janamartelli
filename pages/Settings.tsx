@@ -223,20 +223,37 @@ export const Settings: React.FC = () => {
   const handleSaveUser = async () => {
       if(!userForm.username || !userForm.password) return alert("Preencha os campos");
       setLoading(true);
-      if (editingUser) {
-          await supabase.from('profiles').update(userForm).eq('id', editingUser.id);
-      } else {
-          await supabase.from('profiles').insert(userForm);
+      try {
+          let error;
+          if (editingUser) {
+              const { error: err } = await supabase.from('profiles').update(userForm).eq('id', editingUser.id);
+              error = err;
+          } else {
+              const { error: err } = await supabase.from('profiles').insert(userForm);
+              error = err;
+          }
+          if (error) throw error;
+          setIsUserModalOpen(false);
+          fetchUsers();
+      } catch (err: any) {
+          alert("Erro ao salvar usuário: " + err.message);
+      } finally {
+          setLoading(false);
       }
-      setLoading(false);
-      setIsUserModalOpen(false);
-      fetchUsers();
   };
 
   const handleDeleteUser = async (id: string) => {
       if(!confirm("Excluir usuário?")) return;
-      await supabase.from('profiles').delete().eq('id', id);
-      fetchUsers();
+      setLoading(true);
+      try {
+          const { error } = await supabase.from('profiles').delete().eq('id', id);
+          if (error) throw error;
+          fetchUsers();
+      } catch (err: any) {
+          alert("Erro ao excluir usuário: " + err.message);
+      } finally {
+          setLoading(false);
+      }
   };
 
   const handleOpenSizeModal = (size?: ProductSize) => {
@@ -390,6 +407,9 @@ export const Settings: React.FC = () => {
                               </td>
                           </tr>
                       ))}
+                      {users.length === 0 && (
+                          <tr><td colSpan={3} className="p-8 text-center text-slate-400 italic">Nenhum usuário cadastrado.</td></tr>
+                      )}
                   </tbody>
               </table>
           </div>
@@ -510,6 +530,38 @@ export const Settings: React.FC = () => {
                   <div className="p-6 bg-slate-100 dark:bg-slate-800 rounded-xl border-2 border-dashed dark:border-slate-700 text-center">
                        <AlertCircle className="mx-auto mb-3 text-slate-400" size={32}/>
                        <p className="text-slate-500 dark:text-slate-400 text-sm">Para trocar o e-mail/conta do Supabase, você deve primeiro gerar o backup acima, configurar o novo banco e então restaurar.</p>
+                  </div>
+              </div>
+
+              <div className="bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-xl p-8 shadow-lg">
+                  <h3 className="text-xl font-bold dark:text-white flex items-center mb-6 gap-2"><Wand2 className="text-purple-500" size={24}/> Ferramentas de Reparo</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="p-6 bg-slate-50 dark:bg-slate-900/50 rounded-xl border-2 border-slate-200 dark:border-slate-700">
+                          <h4 className="font-bold text-slate-800 dark:text-white flex items-center gap-2 mb-2"><AlertTriangle size={18} className="text-amber-500"/> Corrigir Tabelas</h4>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Cria as tabelas de Tamanhos e Pagamentos caso elas não existam no seu banco de dados.</p>
+                          <button 
+                            onClick={() => {
+                                navigator.clipboard.writeText(patchSizesScript);
+                                alert("Script SQL copiado! Cole no SQL Editor do Supabase e execute.");
+                            }} 
+                            className="w-full py-3 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 shadow-lg flex justify-center items-center"
+                          >
+                              <Copy size={18} className="mr-2"/> Copiar Script de Reparo
+                          </button>
+                      </div>
+                      <div className="p-6 bg-slate-50 dark:bg-slate-900/50 rounded-xl border-2 border-slate-200 dark:border-slate-700">
+                          <h4 className="font-bold text-slate-800 dark:text-white flex items-center gap-2 mb-2"><RotateCcw size={18} className="text-blue-500"/> Corrigir Sequências</h4>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Resolve o erro "duplicate key value violates unique constraint" que ocorre após restaurações.</p>
+                          <button 
+                            onClick={() => {
+                                navigator.clipboard.writeText(fixSequencesSQL);
+                                alert("Script SQL copiado! Cole no SQL Editor do Supabase e execute.");
+                            }} 
+                            className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg flex justify-center items-center"
+                          >
+                              <Copy size={18} className="mr-2"/> Copiar Script de Sequências
+                          </button>
+                      </div>
                   </div>
               </div>
           </div>

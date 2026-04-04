@@ -234,15 +234,26 @@ NOTIFY pgrst, 'reload schema';
 `;
 
 export const dbSetupScript = fullInstallScript;
-export const fixSequencesSQL = `-- Correção de Sequências
+export const fixSequencesSQL = `-- Correção de Sequências (Sincroniza todos os IDs do banco)
 DO $$
 DECLARE
     r RECORD;
 BEGIN
-    FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
-        IF EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relname = r.tablename || '_id_seq' AND n.nspname = 'public') THEN
-            EXECUTE format('SELECT setval(pg_get_serial_sequence(%L, %L), COALESCE(MAX(id), 0) + 1, false) FROM %I', 'public.' || r.tablename, 'id', r.tablename);
-        END IF;
+    FOR r IN (
+        SELECT 
+            table_schema, 
+            table_name, 
+            column_name, 
+            pg_get_serial_sequence(table_schema || '.' || table_name, column_name) as serial_sequence
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND pg_get_serial_sequence(table_schema || '.' || table_name, column_name) IS NOT NULL
+    ) LOOP
+        EXECUTE format('SELECT setval(%L, COALESCE((SELECT MAX(%I) FROM %I.%I), 0) + 1, false)', 
+            r.serial_sequence, 
+            r.column_name, 
+            r.table_schema, 
+            r.table_name);
     END LOOP;
 END $$;
 `;

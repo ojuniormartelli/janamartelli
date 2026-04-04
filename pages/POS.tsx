@@ -309,7 +309,11 @@ export const POS: React.FC = () => {
     }).select().single();
 
     if (error || !sale) {
-        alert("Erro ao finalizar: " + (error?.message || 'Desconhecido'));
+        if (error?.code === '23505') {
+            alert("Erro de Duplicidade: O banco de dados está com as sequências desajustadas. Vá em Configurações > Banco de Dados e clique em 'Corrigir Sequências'.");
+        } else {
+            alert("Erro ao finalizar: " + (error?.message || 'Desconhecido'));
+        }
         return;
     }
 
