@@ -368,10 +368,51 @@ export const Settings: React.FC = () => {
                       </div>
                   </div>
                   <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase mb-2">URL da Logo (PNG/JPG)</label>
-                      <div className="relative">
-                          <ImageIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
-                          <input value={storeSettings.logo_url || ''} onChange={e => setStoreSettings({...storeSettings, logo_url: e.target.value})} className="w-full p-3 pl-10 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white text-sm" placeholder="https://exemplo.com/logo.png" />
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Logotipo da Loja</label>
+                      <div className="flex flex-col sm:flex-row items-center gap-6 p-6 bg-slate-50 dark:bg-slate-900/50 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700">
+                          <div className="w-32 h-32 bg-white dark:bg-slate-800 rounded-lg shadow-inner border dark:border-slate-700 flex items-center justify-center overflow-hidden shrink-0">
+                              {storeSettings.logo_url ? (
+                                  <img src={storeSettings.logo_url} alt="Logo" className="max-w-full max-h-full object-contain" referrerPolicy="no-referrer" />
+                              ) : (
+                                  <ImageIcon size={48} className="text-slate-300" />
+                              )}
+                          </div>
+                          <div className="flex-1 space-y-3 w-full">
+                              <p className="text-xs text-slate-500 dark:text-slate-400">Recomendado: 512x512px (PNG transparente ou fundo sólido). Máximo 1MB.</p>
+                              <div className="flex flex-wrap gap-2">
+                                  <input 
+                                      type="file" 
+                                      id="logo-upload"
+                                      accept="image/*"
+                                      className="hidden" 
+                                      onChange={(e) => {
+                                          const file = e.target.files?.[0];
+                                          if (file) {
+                                              if (file.size > 1024 * 1024) return alert("A imagem deve ter no máximo 1MB");
+                                              const reader = new FileReader();
+                                              reader.onload = (event) => {
+                                                  setStoreSettings({...storeSettings, logo_url: event.target?.result as string});
+                                              };
+                                              reader.readAsDataURL(file);
+                                          }
+                                      }}
+                                  />
+                                  <label 
+                                      htmlFor="logo-upload"
+                                      className="flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg font-bold text-sm cursor-pointer hover:bg-primary-700 transition-colors shadow-lg shadow-primary-500/20"
+                                  >
+                                      <Upload size={18} className="mr-2"/> Selecionar Imagem
+                                  </label>
+                                  {storeSettings.logo_url && (
+                                      <button 
+                                          onClick={() => setStoreSettings({...storeSettings, logo_url: ''})}
+                                          className="flex items-center px-4 py-2 bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 rounded-lg font-bold text-sm hover:bg-red-200 transition-colors"
+                                      >
+                                          <Trash2 size={18} className="mr-2"/> Remover
+                                      </button>
+                                  )}
+                              </div>
+                          </div>
                       </div>
                   </div>
                   <div className="pt-6 border-t dark:border-slate-700 flex justify-end">
@@ -536,6 +577,19 @@ export const Settings: React.FC = () => {
               <div className="bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-xl p-8 shadow-lg">
                   <h3 className="text-xl font-bold dark:text-white flex items-center mb-6 gap-2"><Wand2 className="text-purple-500" size={24}/> Ferramentas de Reparo</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="p-6 bg-slate-50 dark:bg-slate-900/50 rounded-xl border-2 border-slate-200 dark:border-slate-700">
+                          <h4 className="font-bold text-slate-800 dark:text-white flex items-center gap-2 mb-2"><AlertOctagon size={18} className="text-red-500"/> Instalação Completa</h4>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Cria toda a estrutura do banco do zero. <strong className="text-red-500">AVISO: Isso apaga todos os dados existentes!</strong></p>
+                          <button 
+                            onClick={() => {
+                                navigator.clipboard.writeText(fullInstallScript);
+                                alert("Script de INSTALAÇÃO COMPLETA copiado! Cole no SQL Editor do Supabase. CUIDADO: Este script apaga tudo antes de criar.");
+                            }} 
+                            className="w-full py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 shadow-lg flex justify-center items-center"
+                          >
+                              <Copy size={18} className="mr-2"/> Copiar Script Completo (Zerar)
+                          </button>
+                      </div>
                       <div className="p-6 bg-slate-50 dark:bg-slate-900/50 rounded-xl border-2 border-slate-200 dark:border-slate-700">
                           <h4 className="font-bold text-slate-800 dark:text-white flex items-center gap-2 mb-2"><AlertTriangle size={18} className="text-amber-500"/> Corrigir Tabelas</h4>
                           <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Cria as tabelas de Tamanhos e Pagamentos caso elas não existam no seu banco de dados.</p>
