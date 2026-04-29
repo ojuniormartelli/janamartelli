@@ -272,6 +272,19 @@ END $$;
 NOTIFY pgrst, 'reload schema';
 `;
 
+export const patchBackupScript = `-- =================================================================
+-- PATCH PARA BACKUPS AUTOMÁTICOS / LEMBRETES
+-- =================================================================
+
+ALTER TABLE public.store_settings 
+ADD COLUMN IF NOT EXISTS backup_frequency TEXT DEFAULT 'weekly',
+ADD COLUMN IF NOT EXISTS last_backup_at TIMESTAMPTZ;
+
+-- Tipos permitidos: 'daily', 'weekly', 'monthly', 'never'
+
+NOTIFY pgrst, 'reload schema';
+`;
+
 export const dbSetupScript = fullInstallScript;
 export const fixSequencesSQL = `-- Correção de Sequências (Sincroniza todos os IDs do banco)
 DO $$

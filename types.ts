@@ -127,3 +127,12 @@ export interface FinancialTransaction {
   created_at: string;
   bank_account?: BankAccount; // joined
 }
+
+export interface StoreSettings {
+  id: number;
+  store_name: string;
+  theme_color: string;
+  logo_url?: string;
+  backup_frequency: 'daily' | 'weekly' | 'monthly' | 'never';
+  last_backup_at?: string;
+}

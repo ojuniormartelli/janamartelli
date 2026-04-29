@@ -10,6 +10,7 @@ import { Settings } from './pages/Settings';
 import { Clients } from './pages/Clients';
 import { Sales } from './pages/Sales';
 import { Login } from './pages/Login';
+import { BackupReminder } from './components/BackupReminder';
 
 // Componente Wrapper para rotas protegidas
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -32,7 +33,12 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
       return <Navigate to="/settings" replace />;
   }
   
-  return <Layout>{children}</Layout>;
+  return (
+    <Layout>
+        <BackupReminder />
+        {children}
+    </Layout>
+  );
 };
 
 // Componente Wrapper para a rota de Login (Redireciona se já logado)

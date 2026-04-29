@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase, resetDatabaseConfig, isUsingEnv } from '../supabaseClient';
 import { fixSequencesSQL, fullInstallScript, patchSizesScript, patchCrediarioScript } from '../utils/database.sql';
-import { Profile, PaymentMethod, ProductSize } from '../types';
+import { Profile, PaymentMethod, ProductSize, StoreSettings } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { 
   Server, 
@@ -32,9 +32,12 @@ import {
   ImageIcon,
   Download,
   Upload,
-  History
+  History,
+  Clock
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { patchBackupScript } from '../utils/database.sql';
+import { handleFullExport } from '../utils/backupUtils';
 
 export const Settings: React.FC = () => {
   const { user } = useAuth();
@@ -42,11 +45,13 @@ export const Settings: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [backupLoading, setBackupLoading] = useState(false);
   
-  const [storeSettings, setStoreSettings] = useState({
+  const [storeSettings, setStoreSettings] = useState<StoreSettings>({
     id: 1,
     store_name: '',
     theme_color: '#0ea5e9',
-    logo_url: ''
+    logo_url: '',
+    backup_frequency: 'weekly',
+    last_backup_at: undefined
   });
 
   const [users, setUsers] = useState<Profile[]>([]);
@@ -126,31 +131,15 @@ export const Settings: React.FC = () => {
   };
 
   // --- FULL BACKUP LOGIC ---
-  const handleFullExport = async () => {
+  const onHandleFullExport = async () => {
     setBackupLoading(true);
-    try {
-        const tables = [
-            'profiles', 'store_settings', 'product_sizes', 'payment_methods', 
-            'bank_accounts', 'clients', 'products', 'estoque_tamanhos', 
-            'vendas', 'venda_itens', 'transactions'
-        ];
-        
-        const wb = XLSX.utils.book_new();
-
-        for (const table of tables) {
-            const { data } = await supabase.from(table).select('*');
-            if (data) {
-                const ws = XLSX.utils.json_to_sheet(data);
-                XLSX.utils.book_append_sheet(wb, ws, table.substring(0, 31)); // XLSX sheet names max 31 chars
-            }
-        }
-
-        XLSX.writeFile(wb, `pijamamanager_full_backup_${new Date().toISOString().slice(0,10)}.xlsx`);
-    } catch (e: any) {
-        alert("Erro ao gerar backup: " + e.message);
-    } finally {
-        setBackupLoading(false);
+    await handleFullExport();
+    // Atualizar estado local após o backup para refletir a nova data na UI
+    const { data } = await supabase.from('store_settings').select('last_backup_at').maybeSingle();
+    if (data?.last_backup_at) {
+        setStoreSettings(prev => ({ ...prev, last_backup_at: data.last_backup_at }));
     }
+    setBackupLoading(false);
   };
 
   const handleFullRestore = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -530,13 +519,47 @@ export const Settings: React.FC = () => {
       {activeTab === 'database' && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
               <div className="bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-xl p-8 shadow-lg">
+                  <h3 className="text-xl font-bold dark:text-white flex items-center mb-6 gap-2"><Clock className="text-primary-600" size={24}/> Configuração de Backup Automático</h3>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 p-6 rounded-xl border border-slate-200 dark:border-slate-700">
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                          <div className="flex-1">
+                              <h4 className="font-bold text-slate-800 dark:text-white mb-1">Frequência de Lembrete</h4>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">O sistema lembrará você de baixar um backup com base nesta escolha.</p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-3">
+                              <select 
+                                value={storeSettings.backup_frequency} 
+                                onChange={async (e) => {
+                                    const val = e.target.value as any;
+                                    setStoreSettings({...storeSettings, backup_frequency: val});
+                                    await supabase.from('store_settings').update({ backup_frequency: val }).eq('id', storeSettings.id);
+                                }}
+                                className="p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold"
+                              >
+                                  <option value="daily">Diário</option>
+                                  <option value="weekly">Semanal</option>
+                                  <option value="monthly">Mensal</option>
+                                  <option value="never">Nunca</option>
+                              </select>
+                              {storeSettings.last_backup_at && (
+                                  <div className="text-right">
+                                      <p className="text-[10px] font-bold text-slate-400 uppercase">Último Backup</p>
+                                      <p className="text-xs font-mono text-slate-600 dark:text-slate-300">{new Date(storeSettings.last_backup_at).toLocaleDateString()} {new Date(storeSettings.last_backup_at).toLocaleTimeString()}</p>
+                                  </div>
+                              )}
+                          </div>
+                      </div>
+                  </div>
+              </div>
+
+              <div className="bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-xl p-8 shadow-lg">
                   <h3 className="text-xl font-bold dark:text-white flex items-center mb-6 gap-2"><History className="text-amber-500" size={24}/> Migração e Backups</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="p-6 bg-slate-50 dark:bg-slate-900/50 rounded-xl border-2 border-slate-200 dark:border-slate-700">
                           <h4 className="font-bold text-slate-800 dark:text-white flex items-center gap-2 mb-2"><Download size={18} className="text-primary-600"/> Backup Total</h4>
                           <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Gera um arquivo Excel com todas as tabelas. Útil para migrar para um novo Supabase ou guardar cópia de segurança.</p>
                           <button 
-                            onClick={handleFullExport} 
+                            onClick={onHandleFullExport} 
                             disabled={backupLoading}
                             className="w-full py-3 bg-white dark:bg-slate-800 border-2 border-primary-500 text-primary-600 rounded-xl font-bold hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-all flex justify-center items-center"
                           >
@@ -577,6 +600,19 @@ export const Settings: React.FC = () => {
               <div className="bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-xl p-8 shadow-lg">
                   <h3 className="text-xl font-bold dark:text-white flex items-center mb-6 gap-2"><Wand2 className="text-purple-500" size={24}/> Ferramentas de Reparo</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="p-6 bg-slate-50 dark:bg-slate-900/50 rounded-xl border-2 border-slate-200 dark:border-slate-700">
+                          <h4 className="font-bold text-slate-800 dark:text-white flex items-center gap-2 mb-2"><Database size={18} className="text-primary-500"/> Configurar Backup</h4>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Adiciona as colunas necessárias para o controle de data e frequência de backups.</p>
+                          <button 
+                            onClick={() => {
+                                navigator.clipboard.writeText(patchBackupScript);
+                                alert("Script SQL copiado! Cole no SQL Editor do Supabase e execute.");
+                            }} 
+                            className="w-full py-3 bg-primary-600 text-white rounded-xl font-bold hover:bg-primary-700 shadow-lg flex justify-center items-center"
+                          >
+                              <Copy size={18} className="mr-2"/> Copiar Script de Backup
+                          </button>
+                      </div>
                       <div className="p-6 bg-slate-50 dark:bg-slate-900/50 rounded-xl border-2 border-slate-200 dark:border-slate-700">
                           <h4 className="font-bold text-slate-800 dark:text-white flex items-center gap-2 mb-2"><AlertOctagon size={18} className="text-red-500"/> Instalação Completa</h4>
                           <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Cria toda a estrutura do banco do zero. <strong className="text-red-500">AVISO: Isso apaga todos os dados existentes!</strong></p>
