@@ -298,11 +298,11 @@ export const Inventory: React.FC = () => {
   };
 
   const handleAddTempVar = () => {
-    if (!tempVar.model || !tempVar.sku) return alert("Modelo e SKU obrigatórios");
+    if (!tempVar.model) return alert("Modelo/Cor é obrigatório");
     setNewProduct(prev => ({
         ...prev,
         variations: [...prev.variations, {
-            model_variant: tempVar.model, size: tempVar.size, sku: tempVar.sku, quantity: tempVar.qty,
+            model_variant: tempVar.model, size: tempVar.size, sku: tempVar.sku || '', quantity: tempVar.qty,
             price_cost: parseCurrencyString(tempVar.cost), price_sale: parseCurrencyString(tempVar.sale)
         }]
     }));
@@ -332,11 +332,11 @@ export const Inventory: React.FC = () => {
   };
 
   const handleSaveNewVariant = async () => {
-      if(!newVariant.model || !newVariant.sku) return alert("Preencha Modelo e SKU");
+      if(!newVariant.model) return alert("Preencha o Modelo/Cor");
       setLoading(true);
       const { error } = await supabase.from('estoque_tamanhos').insert({ 
           product_id: newVariant.productId, model_variant: newVariant.model, size: newVariant.size, 
-          sku: newVariant.sku, quantity: newVariant.quantity, 
+          sku: newVariant.sku || '', quantity: newVariant.quantity, 
           price_cost: parseCurrencyString(newVariant.price_cost), 
           price_sale: parseCurrencyString(newVariant.price_sale) 
       });
@@ -502,7 +502,7 @@ export const Inventory: React.FC = () => {
                             <select className="p-2 border rounded dark:bg-slate-800 dark:text-white" value={tempVar.size} onChange={e => setTempVar({...tempVar, size: e.target.value})}>
                                 {sizes.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                             </select>
-                            <input placeholder="SKU" className="p-2 border rounded dark:bg-slate-800 dark:text-white" value={tempVar.sku} onChange={e => setTempVar({...tempVar, sku: e.target.value})} />
+                            <input placeholder="SKU (Opcional)" className="p-2 border rounded dark:bg-slate-800 dark:text-white" value={tempVar.sku} onChange={e => setTempVar({...tempVar, sku: e.target.value})} />
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                             <input placeholder="Custo" type="text" className="p-2 border rounded dark:bg-slate-800 dark:text-white" value={tempVar.cost} onChange={e => setTempVar({...tempVar, cost: e.target.value})} />
@@ -562,7 +562,7 @@ export const Inventory: React.FC = () => {
                     <div><label className="text-xs font-bold text-slate-500 uppercase">Modelo / Cor</label><input value={editingVariation.model_variant || ''} onChange={e => setEditingVariation({...editingVariation, model_variant: e.target.value})} className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" /></div>
                     <div><label className="text-xs font-bold text-slate-500 uppercase">Tamanho</label><select className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" value={editingVariation.size || ''} onChange={e => setEditingVariation({...editingVariation, size: e.target.value})}>{sizes.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}</select></div>
                 </div>
-                <div><label className="text-xs font-bold text-slate-500 uppercase">SKU / Cód. Barras</label><input value={editingVariation.sku || ''} onChange={e => setEditingVariation({...editingVariation, sku: e.target.value})} className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white font-mono" /></div>
+                <div><label className="text-xs font-bold text-slate-500 uppercase">SKU / Cód. Barras (Opcional)</label><input value={editingVariation.sku || ''} onChange={e => setEditingVariation({...editingVariation, sku: e.target.value})} className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white font-mono" /></div>
                 <div className="grid grid-cols-2 gap-4">
                     <div><label className="text-xs font-bold text-slate-500 uppercase">Custo (R$)</label><input type="text" value={editingVariation.price_cost || ''} onChange={e => setEditingVariation({...editingVariation, price_cost: e.target.value as any})} className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" /></div>
                     <div><label className="text-xs font-bold text-slate-500 uppercase">Venda (R$)</label><input type="text" value={editingVariation.price_sale || ''} onChange={e => setEditingVariation({...editingVariation, price_sale: e.target.value as any})} className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold text-primary-600" /></div>
@@ -588,7 +588,7 @@ export const Inventory: React.FC = () => {
                         <div><label className="text-xs font-bold text-slate-500 uppercase">Modelo / Cor</label><input placeholder="Ex: Azul" className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold" value={newVariant.model} onChange={e => setNewVariant({...newVariant, model: e.target.value})} /></div>
                         <div className="grid grid-cols-2 gap-4">
                             <div><label className="text-xs font-bold text-slate-500 uppercase">Tamanho</label><select className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold" value={newVariant.size} onChange={e => setNewVariant({...newVariant, size: e.target.value})}>{sizes.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}</select></div>
-                            <div><label className="text-xs font-bold text-slate-500 uppercase">SKU</label><input placeholder="Cód. Barras" className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" value={newVariant.sku} onChange={e => setNewVariant({...newVariant, sku: e.target.value})} /></div>
+                            <div><label className="text-xs font-bold text-slate-500 uppercase">SKU (Opcional)</label><input placeholder="Cód. Barras" className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" value={newVariant.sku} onChange={e => setNewVariant({...newVariant, sku: e.target.value})} /></div>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                             <div><label className="text-xs font-bold text-slate-500 uppercase">Custo</label><input type="text" className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" value={newVariant.price_cost} onChange={e => setNewVariant({...newVariant, price_cost: e.target.value})} /></div>
