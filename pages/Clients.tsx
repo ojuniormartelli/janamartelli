@@ -101,11 +101,11 @@ export const Clients: React.FC = () => {
     if (client) {
       setEditingClient(client);
       setFormData({
-        full_name: client.full_name,
-        cpf: client.cpf,
-        phone: client.phone,
-        email: client.email,
-        address: client.address
+        full_name: client.full_name || '',
+        cpf: client.cpf || '',
+        phone: client.phone || '',
+        email: client.email || '',
+        address: client.address || ''
       });
       fetchClientHistory(client.id);
     } else {
@@ -397,7 +397,7 @@ export const Clients: React.FC = () => {
                     <div className="relative">
                         <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                         <input 
-                          value={formData.full_name}
+                          value={formData.full_name || ''}
                           onChange={e => setFormData({...formData, full_name: e.target.value})}
                           className="w-full pl-10 p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold"
                           placeholder="Ex: Ana Silva"
@@ -409,7 +409,7 @@ export const Clients: React.FC = () => {
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase mb-2">CPF</label>
                       <input 
-                        value={formData.cpf}
+                        value={formData.cpf || ''}
                         onChange={e => setFormData({...formData, cpf: maskCPF(e.target.value)})}
                         className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white font-mono"
                         placeholder="000.000.000-00"
@@ -418,7 +418,7 @@ export const Clients: React.FC = () => {
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Telefone</label>
                       <input 
-                        value={formData.phone}
+                        value={formData.phone || ''}
                         onChange={e => setFormData({...formData, phone: maskPhone(e.target.value)})}
                         className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                         placeholder="(00) 00000-0000"
@@ -431,7 +431,7 @@ export const Clients: React.FC = () => {
                     <div className="relative">
                         <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                         <input 
-                            value={formData.email}
+                            value={formData.email || ''}
                             onChange={e => setFormData({...formData, email: e.target.value})}
                             className="w-full pl-10 p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                             placeholder="cliente@email.com"
@@ -444,7 +444,7 @@ export const Clients: React.FC = () => {
                     <div className="relative">
                         <MapPin className="absolute left-3 top-3 text-slate-400" size={18} />
                         <textarea 
-                            value={formData.address}
+                            value={formData.address || ''}
                             onChange={e => setFormData({...formData, address: e.target.value})}
                             className="w-full pl-10 p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white h-24 resize-none"
                             placeholder="Rua, Número, Bairro, Cidade..."
@@ -622,10 +622,13 @@ export const Clients: React.FC = () => {
                           <tr key={i}>
                             <td className="py-3">
                               <div className="font-bold dark:text-white">{item.quantity}x {item.product_variation?.products?.nome}</div>
+                              {item.product_variation?.products?.categoria && (
+                                <div className="text-[10px] text-slate-400 uppercase italic">{item.product_variation.products.categoria}</div>
+                              )}
                               <div className="text-[10px] text-slate-500 dark:text-slate-400 flex flex-wrap gap-x-3 gap-y-1 mt-1">
-                                <span><b>Var:</b> {item.product_variation?.model_variant}</span>
-                                <span><b>Tam:</b> {item.product_variation?.size}</span>
-                                <span><b>SKU:</b> {item.product_variation?.sku}</span>
+                                <span className="bg-slate-50 dark:bg-slate-700 px-1 rounded"><b>Mod/Cor:</b> {item.product_variation?.model_variant || 'Padrão'}</span>
+                                <span className="bg-slate-50 dark:bg-slate-700 px-1 rounded"><b>Tam:</b> {item.product_variation?.size}</span>
+                                <span className="bg-slate-50 dark:bg-slate-700 px-1 rounded font-mono"><b>SKU:</b> {item.product_variation?.sku}</span>
                               </div>
                             </td>
                             <td className="text-right py-3 font-mono">

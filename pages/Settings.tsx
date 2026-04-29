@@ -76,14 +76,14 @@ export const Settings: React.FC = () => {
   const backupInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!user?.isBootstrap) {
+    if (user && !user?.isBootstrap) {
         fetchSettings();
         if (activeTab === 'users') fetchUsers();
         if (activeTab === 'payments') fetchPaymentMethods();
         if (activeTab === 'sizes') fetchSizes();
     }
     if (activeTab === 'database') loadConnectionInfo();
-  }, [activeTab]);
+  }, [activeTab, user]);
 
   const loadConnectionInfo = () => {
       const localUrl = localStorage.getItem('custom_supabase_url');
@@ -358,20 +358,20 @@ export const Settings: React.FC = () => {
               <div className="space-y-6">
                   <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Nome da Loja</label>
-                      <input value={storeSettings.store_name} onChange={e => setStoreSettings({...storeSettings, store_name: e.target.value})} className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold" placeholder="Minha Loja de Pijamas" />
+                      <input value={storeSettings.store_name || ''} onChange={e => setStoreSettings({...storeSettings, store_name: e.target.value})} className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold" placeholder="Minha Loja de Pijamas" />
                   </div>
                   <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Cor do Tema (Identidade Visual)</label>
                       <div className="flex items-center gap-3">
-                          <input type="color" value={storeSettings.theme_color} onChange={e => setStoreSettings({...storeSettings, theme_color: e.target.value})} className="h-12 w-16 border rounded-lg cursor-pointer bg-white dark:bg-slate-700 p-1" />
-                          <input value={storeSettings.theme_color} onChange={e => setStoreSettings({...storeSettings, theme_color: e.target.value})} className="flex-1 p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white font-mono" />
+                          <input type="color" value={storeSettings.theme_color || '#0ea5e9'} onChange={e => setStoreSettings({...storeSettings, theme_color: e.target.value})} className="h-12 w-16 border rounded-lg cursor-pointer bg-white dark:bg-slate-700 p-1" />
+                          <input value={storeSettings.theme_color || ''} onChange={e => setStoreSettings({...storeSettings, theme_color: e.target.value})} className="flex-1 p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white font-mono" />
                       </div>
                   </div>
                   <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase mb-2">URL da Logo (PNG/JPG)</label>
                       <div className="relative">
                           <ImageIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
-                          <input value={storeSettings.logo_url} onChange={e => setStoreSettings({...storeSettings, logo_url: e.target.value})} className="w-full p-3 pl-10 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white text-sm" placeholder="https://exemplo.com/logo.png" />
+                          <input value={storeSettings.logo_url || ''} onChange={e => setStoreSettings({...storeSettings, logo_url: e.target.value})} className="w-full p-3 pl-10 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white text-sm" placeholder="https://exemplo.com/logo.png" />
                       </div>
                   </div>
                   <div className="pt-6 border-t dark:border-slate-700 flex justify-end">
@@ -592,7 +592,7 @@ export const Settings: React.FC = () => {
                       <div>
                           <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Nome de Usuário</label>
                           <input 
-                            value={userForm.username} 
+                            value={userForm.username || ''} 
                             onChange={e => setUserForm({...userForm, username: e.target.value})} 
                             className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold" 
                             placeholder="Ex: joao.silva" 
@@ -603,7 +603,7 @@ export const Settings: React.FC = () => {
                           <div className="relative">
                               <input 
                                 type={showUserPassword ? "text" : "password"}
-                                value={userForm.password} 
+                                value={userForm.password || ''} 
                                 onChange={e => setUserForm({...userForm, password: e.target.value})} 
                                 className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white" 
                                 placeholder="••••••••" 
@@ -620,7 +620,7 @@ export const Settings: React.FC = () => {
                       <div>
                           <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Cargo / Permissão</label>
                           <select 
-                            value={userForm.role} 
+                            value={userForm.role || 'employee'} 
                             onChange={e => setUserForm({...userForm, role: e.target.value as any})} 
                             className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                           >
@@ -650,11 +650,11 @@ export const Settings: React.FC = () => {
                   <div className="p-6 space-y-4">
                       <div>
                           <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Nome (Sigla)</label>
-                          <input value={sizeForm.name} onChange={e => setSizeForm({...sizeForm, name: e.target.value})} className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold" placeholder="Ex: G, 42, GG" />
+                          <input value={sizeForm.name || ''} onChange={e => setSizeForm({...sizeForm, name: e.target.value})} className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold" placeholder="Ex: G, 42, GG" />
                       </div>
                       <div>
                           <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Ordem de Exibição</label>
-                          <input type="number" value={sizeForm.sort_order} onChange={e => setSizeForm({...sizeForm, sort_order: parseInt(e.target.value) || 0})} className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
+                          <input type="number" value={sizeForm.sort_order || 0} onChange={e => setSizeForm({...sizeForm, sort_order: parseInt(e.target.value) || 0})} className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
                       </div>
                   </div>
                   <div className="p-6 border-t dark:border-slate-700 flex justify-end gap-3 bg-slate-50 dark:bg-slate-900/50">
@@ -679,11 +679,11 @@ export const Settings: React.FC = () => {
                       <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Nome Visível</label>
-                            <input value={paymentForm.name} onChange={e => setPaymentForm({...paymentForm, name: e.target.value})} className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="Ex: Cartão Visa" />
+                            <input value={paymentForm.name || ''} onChange={e => setPaymentForm({...paymentForm, name: e.target.value})} className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="Ex: Cartão Visa" />
                         </div>
                         <div>
                             <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Tipo de Sistema</label>
-                            <select value={paymentForm.type} onChange={e => setPaymentForm({...paymentForm, type: e.target.value as any})} className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white">
+                            <select value={paymentForm.type || 'cash'} onChange={e => setPaymentForm({...paymentForm, type: e.target.value as any})} className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white">
                                 <option value="cash">Dinheiro</option>
                                 <option value="pix">Pix</option>
                                 <option value="debit">Débito</option>

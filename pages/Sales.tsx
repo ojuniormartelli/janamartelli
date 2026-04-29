@@ -243,14 +243,15 @@ export const Sales: React.FC = () => {
                             <tbody>{selectedSale.items?.map((item: any, i: number) => (
                                 <tr key={i} className="border-b dark:border-slate-700">
                                     <td className="py-2 dark:text-white">
-                                        <div className="font-bold">{item.quantity}x {item.product_variation?.products?.nome}</div>
-                                        <div className="text-[10px] text-slate-500 dark:text-slate-400 flex gap-2">
-                                            <span><b>Modelo:</b> {item.product_variation?.model_variant}</span>
-                                            <span>|</span>
-                                            <span><b>Tam:</b> {item.product_variation?.size}</span>
-                                            <span>|</span>
-                                            <span><b>SKU:</b> {item.product_variation?.sku}</span>
-                                        </div>
+                                <div className="font-bold">{item.quantity}x {item.product_variation?.products?.nome}</div>
+                                {item.product_variation?.products?.categoria && (
+                                    <div className="text-[10px] text-slate-400 uppercase italic">{item.product_variation.products.categoria}</div>
+                                )}
+                                <div className="text-[10px] text-slate-500 dark:text-slate-400 flex flex-wrap gap-2 mt-1">
+                                    <span className="bg-slate-100 dark:bg-slate-700 px-1 rounded"><b>Mod/Cor:</b> {item.product_variation?.model_variant || 'Padrão'}</span>
+                                    <span className="bg-slate-100 dark:bg-slate-700 px-1 rounded"><b>Tam:</b> {item.product_variation?.size}</span>
+                                    <span className="bg-slate-100 dark:bg-slate-700 px-1 rounded font-mono"><b>SKU:</b> {item.product_variation?.sku}</span>
+                                </div>
                                     </td>
                                     <td className="text-right dark:text-white font-mono">
                                         {formatCurrency(item.unit_price * item.quantity)}
@@ -323,7 +324,7 @@ export const Sales: React.FC = () => {
                             autoFocus 
                             className="w-full p-4 pr-12 border rounded-xl text-center text-2xl tracking-widest dark:bg-slate-700 dark:text-white dark:border-slate-600 focus:ring-2 focus:ring-primary-500 outline-none" 
                             placeholder="••••••" 
-                            value={passwordAttempt} 
+                            value={passwordAttempt || ''} 
                             onChange={e => setPasswordAttempt(e.target.value)} 
                             onKeyDown={e => e.key === 'Enter' && verifyPassword()}
                         />
