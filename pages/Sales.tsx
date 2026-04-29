@@ -38,10 +38,25 @@ export const Sales: React.FC = () => {
     setLoading(true);
     const { data } = await supabase
       .from('vendas')
-      .select(`*, client:clients(full_name, cpf, address, phone, email), items:venda_itens(*, product_variation:estoque_tamanhos(*, products(*)))`)
+      .select(`
+        *, 
+        client:clients(full_name, cpf, address, phone, email), 
+        items:venda_itens(*, product_variation:estoque_tamanhos(*, products(*))),
+        payments:venda_pagamentos(*)
+      `)
       .order('created_at', { ascending: false });
 
-    if (data) setSales(data as any);
+    if (data) {
+        const enrichedSales = (data as any[]).map(sale => {
+            const paid = (sale.payments || []).reduce((acc: number, p: any) => acc + Number(p.amount), 0);
+            return {
+                ...sale,
+                paid_amount: paid,
+                remaining_balance: Number(sale.total_value) - paid
+            };
+        });
+        setSales(enrichedSales);
+    }
     setLoading(false);
   };
 
@@ -117,6 +132,14 @@ export const Sales: React.FC = () => {
       const { error } = await supabase.from('vendas').update({ payment_status: 'paid', payment_method: method.name }).eq('id', selectedSale.id);
       if (error) return alert("Erro ao atualizar.");
 
+      // Record specialized payment record
+      await supabase.from('venda_pagamentos').insert({
+          sale_id: selectedSale.id,
+          amount: (selectedSale as any).remaining_balance || selectedSale.total_value,
+          payment_method: method.name,
+          date: getLocalDate()
+      });
+
       const { data: defaultAccount } = await supabase.from('bank_accounts').select('*').eq('is_default', true).single();
       const accountId = defaultAccount ? defaultAccount.id : (await supabase.from('bank_accounts').select('id').limit(1).single()).data?.id;
 
@@ -191,7 +214,12 @@ export const Sales: React.FC = () => {
                             <td className="p-4 font-mono font-bold">{sale.code}</td>
                             <td className="p-4 text-slate-500">{new Date(sale.created_at).toLocaleDateString()}</td>
                             <td className="p-4">{sale.client?.full_name || sale.observacoes || 'Consumidor'}</td>
-                            <td className="p-4 font-bold">{formatCurrency(sale.total_value)}</td>
+                            <td className="p-4">
+                                <div className="font-bold">{formatCurrency(sale.total_value)}</div>
+                                {sale.payment_status === 'pending' && (sale as any).paid_amount > 0 && (
+                                   <div className="text-[10px] text-red-500 font-bold">Falta: {formatCurrency((sale as any).remaining_balance)}</div>
+                                )}
+                            </td>
                             <td className="p-4"><span className={`px-2 py-1 rounded text-xs font-bold uppercase ${sale.status_label === 'Venda' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{sale.status_label}</span></td>
                             <td className="p-4 text-center"><button onClick={() => handleOpenDetails(sale)} className="text-blue-500 p-2 rounded"><Eye size={18}/></button></td>
                         </tr>
@@ -231,7 +259,37 @@ export const Sales: React.FC = () => {
                                 </tr>
                             ))}</tbody>
                         </table>
-                        <div className="text-right border-t pt-4 dark:border-slate-700"><p className="text-2xl font-bold text-primary-600">{formatCurrency(selectedSale.total_value)}</p></div>
+                        <div className="text-right border-t pt-4 dark:border-slate-700">
+                            <p className="text-sm text-slate-500 dark:text-slate-400">Total da Venda</p>
+                            <p className="text-2xl font-black text-slate-800 dark:text-white">{formatCurrency(selectedSale.total_value)}</p>
+                            
+                            {(selectedSale as any).paid_amount > 0 && (
+                                <div className="mt-2 text-right">
+                                    <div className="flex justify-end gap-4 text-sm">
+                                        <span className="text-slate-500">Valor Pago:</span>
+                                        <span className="font-bold text-green-600">{formatCurrency((selectedSale as any).paid_amount)}</span>
+                                    </div>
+                                    <div className="flex justify-end gap-4 text-lg border-t dark:border-slate-700 mt-1 pt-1">
+                                        <span className="font-bold dark:text-white">Saldo Restante:</span>
+                                        <span className="font-black text-red-600">{formatCurrency((selectedSale as any).remaining_balance)}</span>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {(selectedSale as any).payments && (selectedSale as any).payments.length > 0 && (
+                            <div className="mt-6">
+                                <h4 className="text-xs font-bold text-slate-500 uppercase mb-2 border-b dark:border-slate-700 pb-1">Histórico de Recebimentos</h4>
+                                <div className="space-y-1">
+                                    {(selectedSale as any).payments.map((p: any) => (
+                                        <div key={p.id} className="flex justify-between text-[11px] text-slate-600 dark:text-slate-400 italic">
+                                            <span>{new Date(p.date).toLocaleDateString()} - {p.payment_method}</span>
+                                            <span className="font-bold text-green-600">{formatCurrency(p.amount)}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
                     <div className="p-4 border-t dark:border-slate-700 flex justify-between bg-slate-50 dark:bg-slate-900/50">
                          <button onClick={handlePrint} className="flex items-center px-4 py-2 bg-white dark:bg-slate-700 border rounded font-bold dark:text-white"><Printer size={18} className="mr-2"/> Imprimir</button>

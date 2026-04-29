@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase, resetDatabaseConfig, isUsingEnv } from '../supabaseClient';
-import { fixSequencesSQL, fullInstallScript, patchSizesScript } from '../utils/database.sql';
+import { fixSequencesSQL, fullInstallScript, patchSizesScript, patchCrediarioScript } from '../utils/database.sql';
 import { Profile, PaymentMethod, ProductSize } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { 
@@ -547,6 +547,19 @@ export const Settings: React.FC = () => {
                             className="w-full py-3 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 shadow-lg flex justify-center items-center"
                           >
                               <Copy size={18} className="mr-2"/> Copiar Script de Reparo
+                          </button>
+                      </div>
+                      <div className="p-6 bg-slate-50 dark:bg-slate-900/50 rounded-xl border-2 border-slate-200 dark:border-slate-700">
+                          <h4 className="font-bold text-slate-800 dark:text-white flex items-center gap-2 mb-2"><History size={18} className="text-purple-500"/> Configurar Crediário</h4>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Cria as tabelas necessárias para o sistema de pagamentos parciais e crediário.</p>
+                          <button 
+                            onClick={() => {
+                                navigator.clipboard.writeText(patchCrediarioScript);
+                                alert("Script SQL copiado! Cole no SQL Editor do Supabase e execute.");
+                            }} 
+                            className="w-full py-3 bg-purple-600 text-white rounded-xl font-bold hover:bg-purple-700 shadow-lg flex justify-center items-center"
+                          >
+                              <Copy size={18} className="mr-2"/> Copiar Script de Crediário
                           </button>
                       </div>
                       <div className="p-6 bg-slate-50 dark:bg-slate-900/50 rounded-xl border-2 border-slate-200 dark:border-slate-700">

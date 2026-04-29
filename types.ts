@@ -18,6 +18,16 @@ export interface Client {
   email: string;
   address: string;
   created_at?: string;
+  total_debt?: number; // Virtual field calculated in UI
+}
+
+export interface SalePayment {
+  id: number;
+  sale_id: number;
+  amount: number;
+  payment_method: string;
+  date: string;
+  created_at: string;
 }
 
 export interface Product {
@@ -71,6 +81,8 @@ export interface Sale {
   client?: Client;
   items?: SaleItem[];
   payment_details?: any;
+  payments?: SalePayment[]; // Partial payments
+  paid_amount?: number; // Cached or virtual
 }
 
 export interface SaleItem {
