@@ -5,6 +5,7 @@ import { Lock, User, Eye, EyeOff, AlertTriangle, Database, X, Check, Copy, Wifi,
 import { useNavigate } from 'react-router-dom';
 import { fullInstallScript, patchSizesScript } from '../utils/database.sql';
 import { isDbConfigured, supabase } from '../supabaseClient';
+import { logActivity } from '../utils/logUtils';
 
 export const Login: React.FC = () => {
   const { signIn } = useAuth();
@@ -55,7 +56,9 @@ export const Login: React.FC = () => {
     if (error) {
       setError(typeof error === 'string' ? error : 'Falha ao entrar.');
       setLoading(false);
+      logActivity('Falha de Login', `Tentativa frustrada para o usuário: ${username}`);
     } else {
+      logActivity('Login no Sistema', `Usuário ${username} acessou o sistema.`);
       navigate('/');
     }
   };

@@ -285,6 +285,31 @@ ADD COLUMN IF NOT EXISTS last_backup_at TIMESTAMPTZ;
 NOTIFY pgrst, 'reload schema';
 `;
 
+export const patchSecurityScript = `-- =================================================================
+-- PATCH DE SEGURANÇA: LOGS E PREFERÊNCIAS
+-- =================================================================
+
+CREATE TABLE IF NOT EXISTS public.activity_logs (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    user_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+    username TEXT,
+    action TEXT NOT NULL,
+    details TEXT,
+    ip_address TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.activity_logs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public Access Logs" ON activity_logs;
+CREATE POLICY "Public Access Logs" ON activity_logs FOR ALL USING (true) WITH CHECK (true);
+
+-- Coluna para Auto-Logout nas configurações da loja
+ALTER TABLE public.store_settings 
+ADD COLUMN IF NOT EXISTS auto_logout_minutes INTEGER DEFAULT 0; -- 0 significa desativado
+
+NOTIFY pgrst, 'reload schema';
+`;
+
 export const dbSetupScript = fullInstallScript;
 export const fixSequencesSQL = `-- Correção de Sequências (Sincroniza todos os IDs do banco)
 DO $$

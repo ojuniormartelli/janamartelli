@@ -14,8 +14,12 @@ export const handleFullExport = async (setLoading?: (l: boolean) => void) => {
         const wb = XLSX.utils.book_new();
 
         for (const table of tables) {
-            const { data } = await supabase.from(table).select('*').order(table === 'store_settings' ? 'id' : 'created_at', { ascending: true }).catch(() => ({ data: null }));
-            if (data && data.length > 0) {
+            const { data, error } = await supabase
+                .from(table)
+                .select('*')
+                .order(table === 'store_settings' ? 'id' : 'created_at', { ascending: true });
+                
+            if (!error && data && data.length > 0) {
                 const ws = XLSX.utils.json_to_sheet(data);
                 XLSX.utils.book_append_sheet(wb, ws, table.substring(0, 31));
             }

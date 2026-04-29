@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase, resetDatabaseConfig, isUsingEnv } from '../supabaseClient';
-import { fixSequencesSQL, fullInstallScript, patchSizesScript, patchCrediarioScript } from '../utils/database.sql';
+import { fixSequencesSQL, fullInstallScript, patchSizesScript, patchCrediarioScript, patchSecurityScript } from '../utils/database.sql';
 import { Profile, PaymentMethod, ProductSize, StoreSettings } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { 
@@ -41,9 +41,10 @@ import { handleFullExport } from '../utils/backupUtils';
 
 export const Settings: React.FC = () => {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'payments' | 'sizes' | 'database'>(user?.isBootstrap ? 'database' : 'general');
+  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'payments' | 'sizes' | 'database' | 'logs'>(user?.isBootstrap ? 'database' : 'general');
   const [loading, setLoading] = useState(false);
   const [backupLoading, setBackupLoading] = useState(false);
+  const [logs, setLogs] = useState<any[]>([]);
   
   const [storeSettings, setStoreSettings] = useState<StoreSettings>({
     id: 1,
@@ -51,7 +52,8 @@ export const Settings: React.FC = () => {
     theme_color: '#0ea5e9',
     logo_url: '',
     backup_frequency: 'weekly',
-    last_backup_at: undefined
+    last_backup_at: undefined,
+    auto_logout_minutes: 0
   });
 
   const [users, setUsers] = useState<Profile[]>([]);
@@ -86,6 +88,7 @@ export const Settings: React.FC = () => {
         if (activeTab === 'users') fetchUsers();
         if (activeTab === 'payments') fetchPaymentMethods();
         if (activeTab === 'sizes') fetchSizes();
+        if (activeTab === 'logs') fetchLogs();
     }
     if (activeTab === 'database') loadConnectionInfo();
   }, [activeTab, user]);
@@ -128,6 +131,18 @@ export const Settings: React.FC = () => {
       } catch (err: any) {
           setSizes([]);
       }
+  };
+
+  const fetchLogs = async () => {
+    if(user?.isBootstrap) return;
+    setLoading(true);
+    const { data } = await supabase
+        .from('activity_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(100);
+    if (data) setLogs(data);
+    setLoading(false);
   };
 
   // --- FULL BACKUP LOGIC ---
@@ -336,80 +351,150 @@ export const Settings: React.FC = () => {
                 <button onClick={() => setActiveTab('users')} className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors whitespace-nowrap ${activeTab === 'users' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Usuários</button>
                 <button onClick={() => setActiveTab('sizes')} className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors whitespace-nowrap ${activeTab === 'sizes' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Tamanhos</button>
                 <button onClick={() => setActiveTab('payments')} className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors whitespace-nowrap ${activeTab === 'payments' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Pagamentos</button>
+                <button onClick={() => setActiveTab('logs')} className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors whitespace-nowrap ${activeTab === 'logs' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Atividade</button>
             </>
         )}
         <button onClick={() => setActiveTab('database')} className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors whitespace-nowrap ${activeTab === 'database' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Banco de Dados</button>
       </div>
 
       {activeTab === 'general' && !user?.isBootstrap && (
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg border dark:border-slate-700 p-8 max-w-2xl animate-in fade-in duration-300">
-              <h3 className="font-bold text-xl mb-6 dark:text-white flex items-center gap-2"><Building2 className="text-primary-600" size={24}/> Identidade da Loja</h3>
-              <div className="space-y-6">
-                  <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Nome da Loja</label>
-                      <input value={storeSettings.store_name || ''} onChange={e => setStoreSettings({...storeSettings, store_name: e.target.value})} className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold" placeholder="Minha Loja de Pijamas" />
-                  </div>
-                  <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Cor do Tema (Identidade Visual)</label>
-                      <div className="flex items-center gap-3">
-                          <input type="color" value={storeSettings.theme_color || '#0ea5e9'} onChange={e => setStoreSettings({...storeSettings, theme_color: e.target.value})} className="h-12 w-16 border rounded-lg cursor-pointer bg-white dark:bg-slate-700 p-1" />
-                          <input value={storeSettings.theme_color || ''} onChange={e => setStoreSettings({...storeSettings, theme_color: e.target.value})} className="flex-1 p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white font-mono" />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in duration-300">
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg border dark:border-slate-700 p-8 animate-in fade-in duration-300">
+                  <h3 className="font-bold text-xl mb-6 dark:text-white flex items-center gap-2"><Building2 className="text-primary-600" size={24}/> Identidade da Loja</h3>
+                  <div className="space-y-6">
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Nome da Loja</label>
+                          <input value={storeSettings.store_name || ''} onChange={e => setStoreSettings({...storeSettings, store_name: e.target.value})} className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold" placeholder="Minha Loja de Pijamas" />
                       </div>
-                  </div>
-                  <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Logotipo da Loja</label>
-                      <div className="flex flex-col sm:flex-row items-center gap-6 p-6 bg-slate-50 dark:bg-slate-900/50 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700">
-                          <div className="w-32 h-32 bg-white dark:bg-slate-800 rounded-lg shadow-inner border dark:border-slate-700 flex items-center justify-center overflow-hidden shrink-0">
-                              {storeSettings.logo_url ? (
-                                  <img src={storeSettings.logo_url} alt="Logo" className="max-w-full max-h-full object-contain" referrerPolicy="no-referrer" />
-                              ) : (
-                                  <ImageIcon size={48} className="text-slate-300" />
-                              )}
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Cor do Tema (Identidade Visual)</label>
+                          <div className="flex items-center gap-3">
+                              <input type="color" value={storeSettings.theme_color || '#0ea5e9'} onChange={e => setStoreSettings({...storeSettings, theme_color: e.target.value})} className="h-12 w-16 border rounded-lg cursor-pointer bg-white dark:bg-slate-700 p-1" />
+                              <input value={storeSettings.theme_color || ''} onChange={e => setStoreSettings({...storeSettings, theme_color: e.target.value})} className="flex-1 p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white font-mono" />
                           </div>
-                          <div className="flex-1 space-y-3 w-full">
-                              <p className="text-xs text-slate-500 dark:text-slate-400">Recomendado: 512x512px (PNG transparente ou fundo sólido). Máximo 1MB.</p>
-                              <div className="flex flex-wrap gap-2">
-                                  <input 
-                                      type="file" 
-                                      id="logo-upload"
-                                      accept="image/*"
-                                      className="hidden" 
-                                      onChange={(e) => {
-                                          const file = e.target.files?.[0];
-                                          if (file) {
-                                              if (file.size > 1024 * 1024) return alert("A imagem deve ter no máximo 1MB");
-                                              const reader = new FileReader();
-                                              reader.onload = (event) => {
-                                                  setStoreSettings({...storeSettings, logo_url: event.target?.result as string});
-                                              };
-                                              reader.readAsDataURL(file);
-                                          }
-                                      }}
-                                  />
-                                  <label 
-                                      htmlFor="logo-upload"
-                                      className="flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg font-bold text-sm cursor-pointer hover:bg-primary-700 transition-colors shadow-lg shadow-primary-500/20"
-                                  >
-                                      <Upload size={18} className="mr-2"/> Selecionar Imagem
-                                  </label>
-                                  {storeSettings.logo_url && (
-                                      <button 
-                                          onClick={() => setStoreSettings({...storeSettings, logo_url: ''})}
-                                          className="flex items-center px-4 py-2 bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 rounded-lg font-bold text-sm hover:bg-red-200 transition-colors"
-                                      >
-                                          <Trash2 size={18} className="mr-2"/> Remover
-                                      </button>
+                      </div>
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Logotipo da Loja</label>
+                          <div className="flex flex-col sm:flex-row items-center gap-6 p-6 bg-slate-50 dark:bg-slate-900/50 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700">
+                              <div className="w-32 h-32 bg-white dark:bg-slate-800 rounded-lg shadow-inner border dark:border-slate-700 flex items-center justify-center overflow-hidden shrink-0">
+                                  {storeSettings.logo_url ? (
+                                      <img src={storeSettings.logo_url} alt="Logo" className="max-w-full max-h-full object-contain" referrerPolicy="no-referrer" />
+                                  ) : (
+                                      <ImageIcon size={48} className="text-slate-300" />
                                   )}
+                              </div>
+                              <div className="flex-1 space-y-3 w-full">
+                                  <p className="text-xs text-slate-500 dark:text-slate-400">Recomendado: 512x512px (PNG transparente ou fundo sólido). Máximo 1MB.</p>
+                                  <div className="flex flex-wrap gap-2">
+                                      <input 
+                                          type="file" 
+                                          id="logo-upload"
+                                          accept="image/*"
+                                          className="hidden" 
+                                          onChange={(e) => {
+                                              const file = e.target.files?.[0];
+                                              if (file) {
+                                                  if (file.size > 1024 * 1024) return alert("A imagem deve ter no máximo 1MB");
+                                                  const reader = new FileReader();
+                                                  reader.onload = (event) => {
+                                                      setStoreSettings({...storeSettings, logo_url: event.target?.result as string});
+                                                  };
+                                                  reader.readAsDataURL(file);
+                                              }
+                                          }}
+                                      />
+                                      <label 
+                                          htmlFor="logo-upload"
+                                          className="flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg font-bold text-sm cursor-pointer hover:bg-primary-700 transition-colors shadow-lg shadow-primary-500/20"
+                                      >
+                                          <Upload size={18} className="mr-2"/> Selecionar Imagem
+                                      </label>
+                                      {storeSettings.logo_url && (
+                                          <button 
+                                              onClick={() => setStoreSettings({...storeSettings, logo_url: ''})}
+                                              className="flex items-center px-4 py-2 bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 rounded-lg font-bold text-sm hover:bg-red-200 transition-colors"
+                                          >
+                                              <Trash2 size={18} className="mr-2"/> Remover
+                                          </button>
+                                      )}
+                                  </div>
                               </div>
                           </div>
                       </div>
+                      <div className="pt-6 border-t dark:border-slate-700 flex justify-end">
+                          <button onClick={handleSaveSettings} disabled={loading} className="px-8 py-3 bg-primary-600 text-white rounded-lg font-bold hover:bg-primary-700 shadow-lg shadow-primary-500/20 flex items-center gap-2 transition-all">
+                              {loading ? <Loader className="animate-spin" size={18}/> : <Save size={18}/>}
+                              Salvar Configurações
+                          </button>
+                      </div>
                   </div>
-                  <div className="pt-6 border-t dark:border-slate-700 flex justify-end">
-                      <button onClick={handleSaveSettings} disabled={loading} className="px-8 py-3 bg-primary-600 text-white rounded-lg font-bold hover:bg-primary-700 shadow-lg shadow-primary-500/20 flex items-center gap-2 transition-all">
-                          {loading ? <Loader className="animate-spin" size={18}/> : <Save size={18}/>}
-                          Salvar Configurações
-                      </button>
+              </div>
+
+              <div className="space-y-6">
+                  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg border dark:border-slate-700 p-8">
+                      <h3 className="font-bold text-xl mb-6 dark:text-white flex items-center gap-2"><Shield className="text-purple-600" size={24}/> Segurança</h3>
+                      <div className="space-y-6">
+                           <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Auto-Logout por Inatividade</label>
+                                <select 
+                                    className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold"
+                                    value={storeSettings.auto_logout_minutes || 0}
+                                    onChange={e => setStoreSettings({...storeSettings, auto_logout_minutes: parseInt(e.target.value)})}
+                                >
+                                    <option value={0}>Desativado</option>
+                                    <option value={5}>5 Minutos</option>
+                                    <option value={15}>15 Minutos</option>
+                                    <option value={30}>30 Minutos</option>
+                                    <option value={60}>1 Hora</option>
+                                </select>
+                                <p className="text-[10px] text-slate-400 mt-2 italic">Fecha a sessão automaticamente se o computador ficar parado.</p>
+                           </div>
+                           <div className="pt-6 border-t dark:border-slate-700">
+                                <button onClick={handleSaveSettings} disabled={loading} className="w-full py-3 bg-slate-800 dark:bg-slate-700 text-white rounded-xl font-bold hover:bg-slate-900 transition-all flex justify-center items-center gap-2">
+                                    <Save size={18}/> Salvar Segurança
+                                </button>
+                           </div>
+                      </div>
                   </div>
+              </div>
+          </div>
+      )}
+
+      {activeTab === 'logs' && !user?.isBootstrap && (
+          <div className="bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-xl shadow-lg overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="p-6 border-b dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
+                  <div>
+                    <h3 className="text-xl font-bold dark:text-white flex items-center gap-2"><History className="text-primary-600" size={24}/> Histórico de Atividade</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Acompanhe as últimas ações realizadas no sistema.</p>
+                  </div>
+                  <button onClick={fetchLogs} className="p-2 text-primary-600 hover:bg-primary-50 rounded-lg transition-colors">
+                      <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
+                  </button>
+              </div>
+              <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                      <thead className="bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 text-xs uppercase font-bold">
+                          <tr>
+                              <th className="p-4">Data/Hora</th>
+                              <th className="p-4">Usuário</th>
+                              <th className="p-4">Ação</th>
+                              <th className="p-4">Detalhes</th>
+                          </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-sm">
+                          {logs.map(log => (
+                              <tr key={log.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                                  <td className="p-4 font-mono text-xs text-slate-500">{new Date(log.created_at).toLocaleString()}</td>
+                                  <td className="p-4 font-bold dark:text-white">{log.username}</td>
+                                  <td className="p-4"><span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-[10px] font-bold uppercase">{log.action}</span></td>
+                                  <td className="p-4 text-slate-500 italic">{log.details}</td>
+                              </tr>
+                          ))}
+                          {logs.length === 0 && (
+                              <tr><td colSpan={4} className="p-8 text-center text-slate-400 italic">Nenhum log encontrado.</td></tr>
+                          )}
+                      </tbody>
+                  </table>
               </div>
           </div>
       )}
@@ -600,6 +685,19 @@ export const Settings: React.FC = () => {
               <div className="bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-xl p-8 shadow-lg">
                   <h3 className="text-xl font-bold dark:text-white flex items-center mb-6 gap-2"><Wand2 className="text-purple-500" size={24}/> Ferramentas de Reparo</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="p-6 bg-slate-50 dark:bg-slate-900/50 rounded-xl border-2 border-slate-200 dark:border-slate-700">
+                          <h4 className="font-bold text-slate-800 dark:text-white flex items-center gap-2 mb-2"><Shield size={18} className="text-purple-500"/> Configurar Segurança</h4>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Adiciona a tabela de Logs e configurações de Auto-Logout ao seu banco de dados.</p>
+                          <button 
+                            onClick={() => {
+                                navigator.clipboard.writeText(patchSecurityScript);
+                                alert("Script SQL de Segurança copiado! Cole no SQL Editor do Supabase e execute.");
+                            }} 
+                            className="w-full py-3 bg-purple-600 text-white rounded-xl font-bold hover:bg-purple-700 shadow-lg flex justify-center items-center"
+                          >
+                              <Copy size={18} className="mr-2"/> Copiar Script de Segurança
+                          </button>
+                      </div>
                       <div className="p-6 bg-slate-50 dark:bg-slate-900/50 rounded-xl border-2 border-slate-200 dark:border-slate-700">
                           <h4 className="font-bold text-slate-800 dark:text-white flex items-center gap-2 mb-2"><Database size={18} className="text-primary-500"/> Configurar Backup</h4>
                           <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Adiciona as colunas necessárias para o controle de data e frequência de backups.</p>

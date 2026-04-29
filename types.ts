@@ -135,4 +135,5 @@ export interface StoreSettings {
   logo_url?: string;
   backup_frequency: 'daily' | 'weekly' | 'monthly' | 'never';
   last_backup_at?: string;
+  auto_logout_minutes: number;
 }

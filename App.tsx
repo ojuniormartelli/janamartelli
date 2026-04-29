@@ -1,5 +1,5 @@
-import React from 'react';
-import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Layout } from './components/Layout';
 import { Inventory } from './pages/Inventory';
@@ -11,10 +11,51 @@ import { Clients } from './pages/Clients';
 import { Sales } from './pages/Sales';
 import { Login } from './pages/Login';
 import { BackupReminder } from './components/BackupReminder';
+import { supabase } from './supabaseClient';
 
 // Componente Wrapper para rotas protegidas
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { loading, user } = useAuth();
+  const { loading, user, signOut } = useAuth();
+  const [autoLogoutTime, setAutoLogoutTime] = useState<number>(0);
+  const timerRef = useRef<any>(null);
+
+  useEffect(() => {
+    fetchSecurityConfig();
+  }, [user]);
+
+  const fetchSecurityConfig = async () => {
+    if (!user || user.isBootstrap) return;
+    const { data } = await supabase.from('store_settings').select('auto_logout_minutes').maybeSingle();
+    if (data?.auto_logout_minutes) {
+        setAutoLogoutTime(data.auto_logout_minutes);
+        resetTimer();
+    }
+  };
+
+  const resetTimer = () => {
+    if (autoLogoutTime <= 0) return;
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+        signOut();
+        alert("Sua sessão expirou por inatividade por segurança.");
+    }, autoLogoutTime * 60 * 1000);
+  };
+
+  useEffect(() => {
+    if (autoLogoutTime > 0) {
+        window.addEventListener('mousemove', resetTimer);
+        window.addEventListener('keydown', resetTimer);
+        window.addEventListener('mousedown', resetTimer);
+        window.addEventListener('touchstart', resetTimer);
+    }
+    return () => {
+        window.removeEventListener('mousemove', resetTimer);
+        window.removeEventListener('keydown', resetTimer);
+        window.removeEventListener('mousedown', resetTimer);
+        window.removeEventListener('touchstart', resetTimer);
+        if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [autoLogoutTime]);
   
   if (loading) {
       return (
