@@ -2,9 +2,10 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { Product, ProductVariation, ProductSize } from '../types';
-import { ChevronDown, ChevronRight, Plus, AlertTriangle, Loader, Trash2, Edit2, X, Save, Search, Download, Layers, Settings as SettingsIcon, Package, PlusCircle, Upload, Combine } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, AlertTriangle, Loader, Trash2, Edit2, X, Save, Search, Download, Layers, Settings as SettingsIcon, Package, PlusCircle, Upload, Combine, FileSpreadsheet, FileText } from 'lucide-react';
 import { formatCurrency, parseCurrencyString } from '../utils/formatters';
 import * as XLSX from 'xlsx';
+import { RomaneioImportModal } from '../components/RomaneioImportModal';
 
 type SortField = 'modelo' | 'nome' | 'categoria' | 'stock';
 
@@ -19,6 +20,7 @@ export const Inventory: React.FC = () => {
   const [isNewProductModalOpen, setIsNewProductModalOpen] = useState(false);
   const [isAddVariantModalOpen, setIsAddVariantModalOpen] = useState(false);
   const [isRestockModalOpen, setIsRestockModalOpen] = useState(false);
+  const [isRomaneioModalOpen, setIsRomaneioModalOpen] = useState(false);
   
   // Search & Sort
   const [searchQuery, setSearchQuery] = useState('');
@@ -375,8 +377,15 @@ export const Inventory: React.FC = () => {
             disabled={importing}
             className="px-4 py-2 bg-white dark:bg-slate-800 border rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-50 transition-colors shadow-sm flex items-center font-bold text-sm"
           >
-            {importing ? <Loader className="animate-spin mr-2" size={18}/> : <Upload size={18} className="mr-2"/>}
+            {importing ? <Loader className="animate-spin mr-2" size={18}/> : <FileSpreadsheet size={18} className="mr-2"/>}
             Importar Excel
+          </button>
+
+          <button 
+            onClick={() => setIsRomaneioModalOpen(true)}
+            className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-bold shadow-md hover:bg-purple-700 transition-colors flex items-center"
+          >
+            <FileText size={18} className="mr-2"/> Importar Romaneio PDF
           </button>
 
           <button onClick={() => setIsNewProductModalOpen(true)} className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-bold shadow-md hover:bg-primary-700 transition-colors flex items-center">
@@ -602,6 +611,16 @@ export const Inventory: React.FC = () => {
                     </div>
                </div>
           </div>
+      )}
+
+      {isRomaneioModalOpen && (
+        <RomaneioImportModal 
+          onClose={() => setIsRomaneioModalOpen(false)} 
+          onSuccess={() => {
+            setIsRomaneioModalOpen(false);
+            fetchData();
+          }}
+        />
       )}
     </div>
   );
