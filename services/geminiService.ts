@@ -5,19 +5,19 @@ let aiInstance: GoogleGenAI | null = null;
 
 function getAI() {
   if (!aiInstance) {
-    // Tenta pegar de várias formas possíveis em diferentes ambientes
+    // Tenta capturar a chave de todas as formas que o Vite/Build podem disponibilizar
     const apiKey = 
       import.meta.env.VITE_GEMINI_API_KEY || 
-      (import.meta as any).env?.VITE_GEMINI_API_KEY || 
       process.env.GEMINI_API_KEY ||
+      (import.meta as any).env?.VITE_GEMINI_API_KEY ||
       (process.env as any).VITE_GEMINI_API_KEY;
 
     if (!apiKey || apiKey === 'undefined' || apiKey === '') {
-      throw new Error("Chave API do Gemini não encontrada. Certifique-se de que a variável 'VITE_GEMINI_API_KEY' está configurada corretamente no painel da Vercel e que você fez um novo Deploy após salvá-la.");
+      throw new Error("Chave API do Gemini não encontrada. Certifique-se de que a variável 'VITE_GEMINI_API_KEY' está configurada no painel da Vercel e que um novo Deploy foi realizado.");
     }
     
-    // Inicializa com o objeto de configuração para maior clareza
-    aiInstance = new GoogleGenAI(apiKey);
+    // Inicializa com o objeto de configuração, que é o formato mais seguro para o SDK
+    aiInstance = new GoogleGenAI({ apiKey });
   }
   return aiInstance;
 }
@@ -52,12 +52,11 @@ export async function parseRomaneioText(text: string): Promise<RomaneioItem[]> {
 
   try {
     const ai = getAI();
-    // Usando gemini-1.5-flash que é mais estável para produção
-    const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
     
-    const response = await model.generateContent({
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
       contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: {
+      config: {
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.ARRAY,
@@ -78,7 +77,7 @@ export async function parseRomaneioText(text: string): Promise<RomaneioItem[]> {
       },
     });
 
-    const result = JSON.parse(response.response.text() || "[]");
+    const result = JSON.parse(response.text || "[]");
     return result as RomaneioItem[];
   } catch (error: any) {
     console.error("Erro ao processar romaneio com Gemini:", error);
