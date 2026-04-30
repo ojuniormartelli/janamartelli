@@ -26,8 +26,8 @@ export const RomaneioImportModal: React.FC<Props> = ({ onClose, onSuccess }) => 
       const parsedItems = await parseRomaneioText(rawText);
       setItems(parsedItems);
       setStep(2);
-    } catch (error) {
-      alert("Houve um erro ao processar o texto. Verifique se o conteúdo é válido.");
+    } catch (error: any) {
+      alert(error.message || "Houve um erro ao processar o texto. Verifique se o conteúdo é válido.");
     } finally {
       setLoading(false);
     }

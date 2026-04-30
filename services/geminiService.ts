@@ -5,9 +5,9 @@ let aiInstance: GoogleGenAI | null = null;
 
 function getAI() {
   if (!aiInstance) {
-    const apiKey = process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY;
+    const apiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      throw new Error("Chave API do Gemini não configurada. Verifique as variáveis de ambiente.");
+      throw new Error("Chave API do Gemini não encontrada. Por favor, adicione a variável 'VITE_GEMINI_API_KEY' nas configurações da sua Vercel.");
     }
     aiInstance = new GoogleGenAI(apiKey);
   }
