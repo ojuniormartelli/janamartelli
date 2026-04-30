@@ -1,7 +1,18 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY as string });
+let aiInstance: GoogleGenAI | null = null;
+
+function getAI() {
+  if (!aiInstance) {
+    const apiKey = process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error("Chave API do Gemini não configurada. Verifique as variáveis de ambiente.");
+    }
+    aiInstance = new GoogleGenAI(apiKey);
+  }
+  return aiInstance;
+}
 
 export interface RomaneioItem {
   sku: string;
@@ -15,27 +26,29 @@ export interface RomaneioItem {
 
 export async function parseRomaneioText(text: string): Promise<RomaneioItem[]> {
   const prompt = `
-    Analise o texto abaixo que contém uma lista de produtos de um romaneio.
+    Analise o texto abaixo que contém uma lista de produtos de um romaneio da marca 'TRIBO DO SONO'.
     Extraia individualmente cada linha de produto e mapeie para o formato JSON solicitado.
     
     Regras de Mapeamento:
     1. SKU: O número inicial antes do primeiro hífen (ex: 14697).
-    2. Categoria: A primeira parte da descrição que se repete em vários itens (ex: 'PIJAMA FEMININO INVERNO').
-    3. Nome do Produto: A parte central da descrição, que identifica o modelo da peça (ex: 'CAMISA DE VISCO C/BOTOES CALCA VISCO').
-    4. Variação de Modelo/Cor: O texto que vem logo após o nome e antes do tamanho (ex: 'MOCHA MOUSSE').
-    5. Tamanho: Geralmente a última letra ou combinação de letras no final da descrição (P, M, G, GG, PP, XG, etc).
-    6. Quantidade: O valor da coluna Qtd (geralmente formatado como 1,000). Converta para número inteiro.
-    7. Preço de Custo: O valor da coluna Unit (ex: 125,90). Converta para número decimal.
+    2. Categoria: A primeira parte da descrição (ex: 'PIJAMA FEMININO INVERNO' ou 'PIJAMA MASCULINO VERAO').
+    3. Nome do Produto: O modelo central (ex: 'CAMISA DE VISCO C/BOTOES CALCA VISCO' ou 'CAMISETA LISA C/BOLSO SHORT LISO').
+    4. Variação de Modelo/Cor: O texto que vem logo após o nome e antes do tamanho (ex: 'MOCHA MOUSSE', 'GRAFITE/MARINHO', 'ROSA').
+    5. Tamanho: Identifique o tamanho no final (P, M, G, GG, PP, XG, etc).
+    6. Quantidade: O valor da coluna Qtd. Converta para número.
+    7. Preço de Custo: O valor da coluna Unit. Converta para número decimal.
 
     Texto do Romaneio:
     ${text}
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: prompt,
-      config: {
+    const ai = getAI();
+    const model = ai.getGenerativeModel({ model: "gemini-3-flash-preview" });
+    
+    const response = await model.generateContent({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: {
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.ARRAY,
@@ -56,10 +69,13 @@ export async function parseRomaneioText(text: string): Promise<RomaneioItem[]> {
       },
     });
 
-    const result = JSON.parse(response.text || "[]");
+    const result = JSON.parse(response.response.text() || "[]");
     return result as RomaneioItem[];
-  } catch (error) {
+  } catch (error: any) {
     console.error("Erro ao processar romaneio com Gemini:", error);
-    throw new Error("Falha ao processar o texto do romaneio.");
+    if (error.message?.includes("API key")) {
+        throw new Error("Erro de Autenticação: A chave do Gemini não foi encontrada ou é inválida.");
+    }
+    throw new Error("Falha ao processar o texto do romaneio: " + error.message);
   }
 }
