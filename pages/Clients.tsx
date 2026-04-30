@@ -27,6 +27,7 @@ export const Clients: React.FC = () => {
   const [payMethod, setPayMethod] = useState('Dinheiro');
   const [isProcessingPay, setIsProcessingPay] = useState(false);
   const [selectedDetailSale, setSelectedDetailSale] = useState<Sale | null>(null);
+  const [isReadOnly, setIsReadOnly] = useState(true);
   const [formData, setFormData] = useState({
     full_name: '',
     cpf: '',
@@ -38,6 +39,8 @@ export const Clients: React.FC = () => {
   // Import State
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const dbUrl = (supabase as any).supabaseUrl;
 
   useEffect(() => {
     fetchClients();
@@ -45,18 +48,35 @@ export const Clients: React.FC = () => {
 
   const fetchClients = async () => {
     setLoading(true);
+    setError(null);
     try {
+        console.log('Iniciando busca de clientes...');
         const { data: clientsData, error: cErr } = await supabase.from('clients').select('*').order('full_name');
-        if (cErr) throw cErr;
+        
+        if (cErr) {
+            console.error('Erro Supabase Clientes:', cErr);
+            throw cErr;
+        }
+
+        console.log(`Clientes brutos retornados: ${clientsData?.length || 0}`);
 
         // Fetch sales with payments to calculate debt
-        const { data: salesData, error: sErr } = await supabase
-            .from('vendas')
-            .select('client_id, total_value, venda_pagamentos(amount)')
-            .not('client_id', 'is', null);
+        let salesData: any[] = [];
+        try {
+          const { data, error: sErr } = await supabase
+              .from('vendas')
+              .select('client_id, total_value, venda_pagamentos(amount)')
+              .not('client_id', 'is', null);
+          
+          if (!sErr && data) {
+            salesData = data;
+          } else if (sErr) {
+            console.warn("Could not fetch sales for debt calculation:", sErr.message);
+          }
+        } catch (sErr) {
+          console.warn("Error querying sales:", sErr);
+        }
             
-        if (sErr) throw sErr;
-
         const processed = (clientsData || []).map(client => {
             const clientSales = (salesData || []).filter(s => s.client_id === client.id);
             const debt = clientSales.reduce((acc, sale) => {
@@ -66,9 +86,11 @@ export const Clients: React.FC = () => {
             return { ...client, total_debt: debt > 0.01 ? debt : 0 };
         });
 
+        console.log('Clientes processados com sucesso:', processed.length);
         setClients(processed);
-    } catch (err) {
-        console.error(err);
+    } catch (err: any) {
+        console.error("Error fetching clients:", err);
+        setError("Erro ao carregar clientes: " + (err.message || String(err)));
     } finally {
         setLoading(false);
     }
@@ -76,30 +98,38 @@ export const Clients: React.FC = () => {
 
   const fetchClientHistory = async (clientId: string) => {
     setHistoryLoading(true);
-    const { data, error } = await supabase
-        .from('vendas')
-        .select(`
-            *,
-            items:venda_itens(*, product_variation:estoque_tamanhos(*, products(*))),
-            payments:venda_pagamentos(*)
-        `)
-        .eq('client_id', clientId)
-        .order('created_at', { ascending: false });
+    try {
+      const { data, error } = await supabase
+          .from('vendas')
+          .select(`
+              *,
+              items:venda_itens(*, product_variation:estoque_tamanhos(*, products(*))),
+              payments:venda_pagamentos(*)
+          `)
+          .eq('client_id', clientId)
+          .order('created_at', { ascending: false });
 
-    if (data) {
-        const history = data.map((sale: any) => {
-            const paid = (sale.payments || []).reduce((acc: number, p: any) => acc + Number(p.amount), 0);
-            return { ...sale, paid_amount: paid };
-        });
-        setClientHistory(history);
+      if (error) throw error;
+
+      if (data) {
+          const history = data.map((sale: any) => {
+              const paid = (sale.payments || []).reduce((acc: number, p: any) => acc + Number(p.amount), 0);
+              return { ...sale, paid_amount: paid };
+          });
+          setClientHistory(history);
+      }
+    } catch (err) {
+      console.error("Error fetching client history:", err);
+    } finally {
+      setHistoryLoading(false);
     }
-    setHistoryLoading(false);
   };
 
   const handleOpenModal = (client?: Client) => {
     setActiveModalTab('info');
     if (client) {
       setEditingClient(client);
+      setIsReadOnly(true);
       setFormData({
         full_name: client.full_name || '',
         cpf: client.cpf || '',
@@ -110,6 +140,7 @@ export const Clients: React.FC = () => {
       fetchClientHistory(client.id);
     } else {
       setEditingClient(null);
+      setIsReadOnly(false);
       setFormData({ full_name: '', cpf: '', phone: '', email: '', address: '' });
       setClientHistory([]);
     }
@@ -173,25 +204,47 @@ export const Clients: React.FC = () => {
   const handleSave = async () => {
     if (!formData.full_name) return alert("Nome é obrigatório");
 
-    const payload = { ...formData };
+    const payload = { 
+      ...formData,
+      full_name: capitalizeName(formData.full_name.trim()),
+      email: formData.email.trim().toLowerCase()
+    };
 
-    if (editingClient) {
-      const { error } = await supabase.from('clients').update(payload).eq('id', editingClient.id);
-      if (error) alert("Erro ao atualizar");
-    } else {
-      const { error } = await supabase.from('clients').insert(payload);
-      if (error) alert("Erro ao criar");
+    try {
+      if (editingClient) {
+        const { error } = await supabase.from('clients').update(payload).eq('id', editingClient.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('clients').insert(payload);
+        if (error) throw error;
+      }
+      setIsModalOpen(false);
+      fetchClients();
+    } catch (error: any) {
+      console.error("Erro ao salvar cliente:", error);
+      alert("Erro ao salvar cliente: " + (error.message || "Desconhecido"));
     }
-
-    setIsModalOpen(false);
-    fetchClients();
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Tem certeza que deseja excluir este cliente?")) return;
-    const { error } = await supabase.from('clients').delete().eq('id', id);
-    if (!error) fetchClients();
-    else alert("Erro ao excluir. O cliente pode ter vendas vinculadas.");
+    if (!confirm("Tem certeza que deseja excluir este cliente? Isso removerá permanentemente o cadastro.")) return;
+    
+    setLoading(true);
+    try {
+      const { error } = await supabase.from('clients').delete().eq('id', id);
+      if (error) {
+        console.error("Erro ao deletar cliente:", error);
+        alert(`Erro ao excluir: ${error.message}. O cliente pode ter vendas vinculadas que impedem a exclusão.`);
+      } else {
+        alert("Cliente excluído com sucesso!");
+        fetchClients();
+      }
+    } catch (err: any) {
+      console.error("Exceção ao deletar:", err);
+      alert("Erro inesperado ao excluir: " + err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // --- EXCEL LOGIC ---
@@ -234,13 +287,13 @@ export const Clients: React.FC = () => {
           const email = row["E-mail"]?.toString() || row["Email"]?.toString() || "";
           const end = row["Endereço"]?.toString() || row["Endereco"]?.toString() || "";
 
-          if (nome) {
+          if (nome && nome.trim()) {
             await supabase.from('clients').insert({
-              full_name: nome,
-              cpf: cpf,
-              phone: tel,
-              email: email,
-              address: end
+              full_name: capitalizeName(nome.trim()),
+              cpf: cpf.trim(),
+              phone: tel.trim(),
+              email: email.trim().toLowerCase(),
+              address: end.trim()
             });
             success++;
           } else {
@@ -262,10 +315,19 @@ export const Clients: React.FC = () => {
   };
 
   // --- RENDER ---
+  // Mascara Capitalize para exibição
+  const formatCapitalize = (text: string) => {
+    if (!text) return '';
+    return text.split(' ').map(word => {
+      if (word.length === 0) return '';
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    }).join(' ');
+  };
+
   const filteredClients = clients.filter(c => 
-    c.full_name.toLowerCase().includes(search.toLowerCase()) || 
-    c.cpf.includes(search) || 
-    c.phone.includes(search)
+    (c.full_name || '').toLowerCase().includes(search.toLowerCase()) || 
+    (c.cpf || '').includes(search) || 
+    (c.phone || '').includes(search)
   );
 
   return (
@@ -279,6 +341,9 @@ export const Clients: React.FC = () => {
         </div>
 
         <div className="flex gap-2 w-full md:w-auto">
+          <button onClick={fetchClients} className="p-2 text-slate-600 bg-white border rounded hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700" title="Atualizar Lista">
+            <History size={20} className={loading ? 'animate-spin' : ''} />
+          </button>
           <button onClick={handleExportExcel} className="p-2 text-slate-600 bg-white border rounded hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700" title="Exportar Excel">
             <Download size={20} />
           </button>
@@ -292,6 +357,11 @@ export const Clients: React.FC = () => {
       </div>
 
       <div className="bg-white dark:bg-slate-800 rounded-lg shadow overflow-hidden">
+        {error && (
+          <div className="p-4 bg-red-50 text-red-600 flex items-center gap-2 border-b border-red-100">
+             <AlertTriangle size={16}/> {error}
+          </div>
+        )}
         <div className="p-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
           <div className="relative max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
@@ -359,13 +429,18 @@ export const Clients: React.FC = () => {
         </div>
       </div>
 
+      <div className="mt-4 p-2 bg-slate-100 dark:bg-slate-800/50 rounded text-[10px] text-slate-400 flex justify-between">
+        <span>Debug: URL {dbUrl}</span>
+        <span>Debug: Total Clientes {clients.length}</span>
+      </div>
+
       {/* MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
           <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden">
             <div className="p-6 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
               <h3 className="text-xl font-bold text-slate-800 dark:text-white">
-                {editingClient ? 'Editar Cliente' : 'Novo Cliente'}
+                {editingClient ? (isReadOnly ? 'Detalhes do Cliente' : 'Editar Cliente') : 'Novo Cliente'}
               </h3>
               <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600">
                 <X size={24} />
@@ -400,8 +475,9 @@ export const Clients: React.FC = () => {
                           value={formData.full_name || ''}
                           onChange={e => setFormData({...formData, full_name: e.target.value})}
                           onBlur={e => setFormData({...formData, full_name: capitalizeName(e.target.value)})}
-                          className="w-full pl-10 p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold"
+                          className={`w-full pl-10 p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold ${isReadOnly ? 'bg-slate-50 border-transparent cursor-not-allowed' : ''}`}
                           placeholder="Ex: Ana Silva"
+                          readOnly={isReadOnly}
                         />
                     </div>
                   </div>
@@ -412,8 +488,9 @@ export const Clients: React.FC = () => {
                       <input 
                         value={formData.cpf || ''}
                         onChange={e => setFormData({...formData, cpf: maskCPF(e.target.value)})}
-                        className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white font-mono"
+                        className={`w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white font-mono ${isReadOnly ? 'bg-slate-50 border-transparent cursor-not-allowed' : ''}`}
                         placeholder="000.000.000-00"
+                        readOnly={isReadOnly}
                       />
                     </div>
                     <div>
@@ -421,8 +498,9 @@ export const Clients: React.FC = () => {
                       <input 
                         value={formData.phone || ''}
                         onChange={e => setFormData({...formData, phone: maskPhone(e.target.value)})}
-                        className="w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                        className={`w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white ${isReadOnly ? 'bg-slate-50 border-transparent cursor-not-allowed' : ''}`}
                         placeholder="(00) 00000-0000"
+                        readOnly={isReadOnly}
                       />
                     </div>
                   </div>
@@ -434,8 +512,9 @@ export const Clients: React.FC = () => {
                         <input 
                             value={formData.email || ''}
                             onChange={e => setFormData({...formData, email: e.target.value})}
-                            className="w-full pl-10 p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                            className={`w-full pl-10 p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white ${isReadOnly ? 'bg-slate-50 border-transparent cursor-not-allowed' : ''}`}
                             placeholder="cliente@email.com"
+                            readOnly={isReadOnly}
                         />
                     </div>
                   </div>
@@ -447,8 +526,9 @@ export const Clients: React.FC = () => {
                         <textarea 
                             value={formData.address || ''}
                             onChange={e => setFormData({...formData, address: e.target.value})}
-                            className="w-full pl-10 p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white h-24 resize-none"
+                            className={`w-full pl-10 p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white h-24 resize-none ${isReadOnly ? 'bg-slate-50 border-transparent cursor-not-allowed' : ''}`}
                             placeholder="Rua, Número, Bairro, Cidade..."
+                            readOnly={isReadOnly}
                         />
                     </div>
                   </div>
@@ -527,11 +607,27 @@ export const Clients: React.FC = () => {
             </div>
 
             <div className="p-6 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
-              <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-slate-600 dark:text-slate-300 font-medium">Fechar</button>
-              {activeModalTab === 'info' && (
-                <button onClick={handleSave} className="px-8 py-3 bg-primary-600 text-white rounded-xl font-bold hover:bg-primary-700 flex items-center shadow-lg">
-                  <Save size={18} className="mr-2" /> Salvar Alterações
-                </button>
+              {isReadOnly ? (
+                <>
+                  <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-slate-600 dark:text-slate-300 font-medium hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors">Fechar</button>
+                  {activeModalTab === 'info' && (
+                    <button onClick={() => setIsReadOnly(false)} className="px-8 py-3 bg-primary-600 text-white rounded-xl font-bold hover:bg-primary-700 flex items-center shadow-lg transition-all active:scale-95">
+                      <Edit2 size={18} className="mr-2" /> Editar Cliente
+                    </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <button 
+                    onClick={() => editingClient ? setIsReadOnly(true) : setIsModalOpen(false)} 
+                    className="px-4 py-2 text-slate-500 dark:text-slate-400 font-medium hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                  >
+                    {editingClient ? 'Cancelar' : 'Fechar'}
+                  </button>
+                  <button onClick={handleSave} className="px-8 py-3 bg-primary-600 text-white rounded-xl font-bold hover:bg-primary-700 flex items-center shadow-lg transition-all active:scale-95">
+                    <Save size={18} className="mr-2" /> {editingClient ? 'Salvar Alterações' : 'Cadastrar Cliente'}
+                  </button>
+                </>
               )}
             </div>
           </div>

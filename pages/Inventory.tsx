@@ -134,12 +134,16 @@ export const Inventory: React.FC = () => {
                   if (!nome || !ref) continue;
 
                   let productId = '';
-                  const { data: existingProd } = await supabase.from('products').select('id').eq('nome', nome).eq('modelo', ref).maybeSingle();
+                  const capitalizedNome = capitalizeName(nome);
+                  const capitalizedCat = capitalizeName(cat);
+                  const capitalizedCor = capitalizeName(cor);
+                  
+                  const { data: existingProd } = await supabase.from('products').select('id').eq('nome', capitalizedNome).eq('modelo', ref).maybeSingle();
                   
                   if (existingProd) {
                       productId = existingProd.id;
                   } else {
-                      const { data: newP } = await supabase.from('products').insert({ nome, modelo: ref, categoria: cat }).select().single();
+                      const { data: newP } = await supabase.from('products').insert({ nome: capitalizedNome, modelo: ref, categoria: capitalizedCat }).select().single();
                       if (newP) productId = newP.id;
                   }
 
@@ -147,7 +151,7 @@ export const Inventory: React.FC = () => {
                       const { data: existingVar } = await supabase.from('estoque_tamanhos')
                           .select('id, quantity')
                           .eq('product_id', productId)
-                          .eq('model_variant', cor)
+                          .eq('model_variant', capitalizedCor)
                           .eq('size', tam)
                           .maybeSingle();
 
@@ -160,7 +164,7 @@ export const Inventory: React.FC = () => {
                       } else {
                           await supabase.from('estoque_tamanhos').insert({
                               product_id: productId,
-                              model_variant: cor,
+                              model_variant: capitalizedCor,
                               size: tam,
                               sku: sku,
                               quantity: qtd,
@@ -314,12 +318,21 @@ export const Inventory: React.FC = () => {
   const saveNewProduct = async () => {
     if (!newProduct.nome || newProduct.variations.length === 0) return alert("Preencha o nome e adicione ao menos uma variação.");
     setLoading(true);
+    const capitalizedNome = capitalizeName(newProduct.nome);
+    const capitalizedCat = capitalizeName(newProduct.categoria);
     const { data: parent, error: pError } = await supabase.from('products').insert({ 
-        nome: newProduct.nome, categoria: newProduct.categoria, modelo: newProduct.modelo || 'Geral', descricao: newProduct.nome 
+        nome: capitalizedNome, 
+        categoria: capitalizedCat, 
+        modelo: newProduct.modelo || 'Geral', 
+        descricao: capitalizedNome 
     }).select().single();
     
     if (!pError && parent) {
-        const payload = newProduct.variations.map(v => ({ product_id: parent.id, ...v }));
+        const payload = newProduct.variations.map(v => ({ 
+          product_id: parent.id, 
+          ...v,
+          model_variant: capitalizeName(v.model_variant)
+        }));
         await supabase.from('estoque_tamanhos').insert(payload);
         setIsNewProductModalOpen(false);
         setNewProduct({ nome: '', modelo: '', categoria: '', variations: [] });
@@ -337,8 +350,11 @@ export const Inventory: React.FC = () => {
       if(!newVariant.model) return alert("Preencha o Modelo/Cor");
       setLoading(true);
       const { error } = await supabase.from('estoque_tamanhos').insert({ 
-          product_id: newVariant.productId, model_variant: newVariant.model, size: newVariant.size, 
-          sku: newVariant.sku || '', quantity: newVariant.quantity, 
+          product_id: newVariant.productId, 
+          model_variant: capitalizeName(newVariant.model), 
+          size: newVariant.size, 
+          sku: newVariant.sku || '', 
+          quantity: newVariant.quantity, 
           price_cost: parseCurrencyString(newVariant.price_cost), 
           price_sale: parseCurrencyString(newVariant.price_sale) 
       });

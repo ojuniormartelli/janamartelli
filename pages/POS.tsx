@@ -363,12 +363,23 @@ export const POS: React.FC = () => {
 
   const handleQuickSaveClient = async () => {
       if (!newClientData.full_name) return alert("Nome é obrigatório");
-      const { data } = await supabase.from('clients').insert([newClientData]).select().single();
-      if (data) {
-          setClients(prev => [...prev, data].sort((a,b) => a.full_name.localeCompare(b.full_name)));
-          setSelectedClient(data.id);
-          setIsNewClientModalOpen(false);
-          setNewClientData({ full_name: '', cpf: '', phone: '', email: '', address: '' });
+      try {
+          const payload = {
+              ...newClientData,
+              full_name: capitalizeName(newClientData.full_name.trim()),
+              email: newClientData.email.trim().toLowerCase()
+          };
+          const { data, error } = await supabase.from('clients').insert([payload]).select().single();
+          if (error) throw error;
+          if (data) {
+              setClients(prev => [...prev, data].sort((a,b) => a.full_name.localeCompare(b.full_name)));
+              setSelectedClient(data.id);
+              setIsNewClientModalOpen(false);
+              setNewClientData({ full_name: '', cpf: '', phone: '', email: '', address: '' });
+          }
+      } catch (error: any) {
+          console.error("Erro ao criar cliente rápido:", error);
+          alert("Erro ao criar cliente: " + (error.message || "Desconhecido"));
       }
   };
 

@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { X, FileText, Loader, CheckCircle, Edit2, Trash2, Save, AlertCircle } from 'lucide-react';
 import { parseRomaneioText, RomaneioItem } from '../services/geminiService';
 import { supabase } from '../supabaseClient';
-import { formatCurrency } from '../utils/formatters';
+import { formatCurrency, capitalizeName } from '../utils/formatters';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface Props {
@@ -42,12 +42,17 @@ export const RomaneioImportModal: React.FC<Props> = ({ onClose, onSuccess }) => 
     setSaving(true);
     try {
       for (const item of items) {
+        // Enforce capitalization
+        const capitalizedName = capitalizeName(item.name);
+        const capitalizedCategory = capitalizeName(item.category);
+        const capitalizedVariant = capitalizeName(item.variant);
+
         // 1. Encontrar ou criar o produto base
         let productId = '';
         const { data: existingProd } = await supabase
           .from('products')
           .select('id')
-          .eq('nome', item.name)
+          .eq('nome', capitalizedName)
           .eq('modelo', item.sku) // Usando SKU como referência/modelo
           .maybeSingle();
 
@@ -57,10 +62,10 @@ export const RomaneioImportModal: React.FC<Props> = ({ onClose, onSuccess }) => 
           const { data: newP, error: pError } = await supabase
             .from('products')
             .insert({ 
-              nome: item.name, 
+              nome: capitalizedName, 
               modelo: item.sku, 
-              categoria: item.category,
-              descricao: item.name 
+              categoria: capitalizedCategory,
+              descricao: capitalizedName 
             })
             .select()
             .single();
@@ -75,7 +80,7 @@ export const RomaneioImportModal: React.FC<Props> = ({ onClose, onSuccess }) => 
             .from('estoque_tamanhos')
             .select('id, quantity')
             .eq('product_id', productId)
-            .eq('model_variant', item.variant)
+            .eq('model_variant', capitalizedVariant)
             .eq('size', item.size)
             .maybeSingle();
 
@@ -94,7 +99,7 @@ export const RomaneioImportModal: React.FC<Props> = ({ onClose, onSuccess }) => 
               .from('estoque_tamanhos')
               .insert({
                 product_id: productId,
-                model_variant: item.variant,
+                model_variant: capitalizedVariant,
                 size: item.size,
                 sku: `${item.sku}-${item.size}`, // Gerar um SKU composto
                 quantity: item.quantity,
@@ -237,9 +242,9 @@ export const RomaneioImportModal: React.FC<Props> = ({ onClose, onSuccess }) => 
                             ) : (
                               <>
                                 <td className="p-3 text-xs font-mono font-bold text-primary-600">{item.sku}</td>
-                                <td className="p-3 text-[10px] font-bold text-slate-500 uppercase">{item.category}</td>
-                                <td className="p-3 text-xs font-bold dark:text-white">{item.name}</td>
-                                <td className="p-3 text-xs dark:text-slate-300">{item.variant}</td>
+                                <td className="p-3 text-[10px] font-bold text-slate-500 uppercase">{capitalizeName(item.category)}</td>
+                                <td className="p-3 text-xs font-bold dark:text-white">{capitalizeName(item.name)}</td>
+                                <td className="p-3 text-xs dark:text-slate-300">{capitalizeName(item.variant)}</td>
                                 <td className="p-3 text-xs font-black text-center">{item.size}</td>
                                 <td className="p-3 text-xs text-right font-bold">{item.quantity}</td>
                                 <td className="p-3 text-xs text-right text-slate-500 font-bold">{formatCurrency(item.cost)}</td>
