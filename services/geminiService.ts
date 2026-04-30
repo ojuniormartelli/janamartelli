@@ -1,22 +1,17 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
+import { capitalizeName } from "../utils/formatters";
 
 let aiInstance: GoogleGenAI | null = null;
 
 function getAI() {
   if (!aiInstance) {
-    // Tenta capturar a chave de todas as formas que o Vite/Build podem disponibilizar
-    const apiKey = 
-      import.meta.env.VITE_GEMINI_API_KEY || 
-      process.env.GEMINI_API_KEY ||
-      (import.meta as any).env?.VITE_GEMINI_API_KEY ||
-      (process.env as any).VITE_GEMINI_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY;
 
-    if (!apiKey || apiKey === 'undefined' || apiKey === '') {
-      throw new Error("Chave API do Gemini não encontrada. Certifique-se de que a variável 'VITE_GEMINI_API_KEY' está configurada no painel da Vercel e que um novo Deploy foi realizado.");
+    if (!apiKey) {
+      throw new Error("Chave API do Gemini não encontrada. Certifique-se de que a variável 'GEMINI_API_KEY' está configurada.");
     }
     
-    // Inicializa com o objeto de configuração, que é o formato mais seguro para o SDK
     aiInstance = new GoogleGenAI({ apiKey });
   }
   return aiInstance;
@@ -30,6 +25,7 @@ export interface RomaneioItem {
   size: string;
   cost: number;
   quantity: number;
+  price_sale?: number;
 }
 
 export async function parseRomaneioText(text: string): Promise<RomaneioItem[]> {
@@ -77,8 +73,16 @@ export async function parseRomaneioText(text: string): Promise<RomaneioItem[]> {
       },
     });
 
-    const result = JSON.parse(response.text || "[]");
-    return result as RomaneioItem[];
+    const result = JSON.parse(response.text || "[]") as RomaneioItem[];
+    
+    // Aplicar máscara de Capitalize nos campos de texto
+    const capitalizedResult = result.map(item => ({
+      ...item,
+      name: capitalizeName(item.name || ''),
+      variant: capitalizeName(item.variant || ''),
+    }));
+
+    return capitalizedResult;
   } catch (error: any) {
     console.error("Erro ao processar romaneio com Gemini:", error);
     if (error.message?.includes("API key")) {

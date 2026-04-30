@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { Product, CartItem, Client, ProductVariation, PaymentMethod, ProductSize } from '../types';
 import { Search, ShoppingBag, Trash, UserPlus, CheckCircle, X, Save, User, Mail, MapPin, AlertCircle, Tag, TrendingDown, DollarSign, Percent, ScanBarcode, Clock, CreditCard, ClipboardList } from 'lucide-react';
-import { formatCurrency, maskCPF, maskPhone, getLocalDate } from '../utils/formatters';
+import { formatCurrency, maskCPF, maskPhone, getLocalDate, capitalizeName } from '../utils/formatters';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -416,8 +416,8 @@ export const POS: React.FC = () => {
                     return (
                         <div key={product.id} className="bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-700 hover:shadow-lg transition-all flex flex-col overflow-hidden">
                             <div className="p-3 bg-white dark:bg-slate-800 border-b border-slate-100 dark:border-slate-600">
-                                <h3 className="font-bold text-slate-800 dark:text-white leading-tight">{product.nome}</h3>
-                                <p className="text-xs text-slate-500">{product.categoria}</p>
+                                <h3 className="font-bold text-slate-800 dark:text-white leading-tight">{capitalizeName(product.nome)}</h3>
+                                <p className="text-xs text-slate-500">{capitalizeName(product.categoria)}</p>
                             </div>
                             <div className="flex-1 overflow-y-auto max-h-60 p-3 space-y-4">
                                 {Object.keys(variationsByModel).sort().map(model => {
@@ -425,7 +425,7 @@ export const POS: React.FC = () => {
                                     return (
                                         <div key={model} className="space-y-2">
                                             <div className="border-b border-slate-200 dark:border-slate-600 pb-1">
-                                                <span className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase block">{model}</span>
+                                                <span className="text-xs font-bold text-slate-600 dark:text-slate-300 block">{capitalizeName(model)}</span>
                                                 {variantRef && <span className="text-[10px] text-slate-400 font-mono bg-slate-100 dark:bg-slate-700/50 px-1 rounded inline-block mt-0.5">Ref: {variantRef}</span>}
                                             </div>
                                             <div className="flex flex-wrap gap-2">
@@ -465,8 +465,8 @@ export const POS: React.FC = () => {
             {cart.map((item, idx) => (
                 <div key={`${item.variation.id}-${idx}`} className="flex justify-between items-start border-b border-slate-100 dark:border-slate-700 pb-2">
                     <div className="flex-1">
-                        <p className="font-medium text-slate-800 dark:text-white text-sm">{item.product.nome}</p>
-                        <p className="text-xs text-slate-500">{item.variation.model_variant} | Tam: <b>{item.variation.size}</b></p>
+                        <p className="font-medium text-slate-800 dark:text-white text-sm">{capitalizeName(item.product.nome)}</p>
+                        <p className="text-xs text-slate-500">{capitalizeName(item.variation.model_variant)} | Tam: <b>{item.variation.size}</b></p>
                         <div className="flex items-center gap-2 mt-1">
                              <p className="text-xs font-bold text-primary-600">{formatCurrency(item.customPrice || item.variation.price_sale)}</p>
                              {item.customPrice && <span className="text-[10px] line-through text-slate-400">{formatCurrency(item.variation.price_sale)}</span>}
@@ -491,7 +491,7 @@ export const POS: React.FC = () => {
                         onChange={e => setSelectedClient(e.target.value)}
                     >
                         <option value="">Selecione um Cliente *</option>
-                        {clients.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
+                        {clients.map(c => <option key={c.id} value={c.id}>{capitalizeName(c.full_name)}</option>)}
                     </select>
                 </div>
                 <button onClick={() => setIsNewClientModalOpen(true)} className="p-2 bg-primary-100 text-primary-600 rounded hover:bg-primary-200" title="Novo Cliente"><UserPlus size={20} /></button>
@@ -521,7 +521,11 @@ export const POS: React.FC = () => {
                     <button onClick={() => setIsNewClientModalOpen(false)}><X size={20} /></button>
                 </div>
                 <div className="p-4 space-y-3">
-                    <input className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="Nome Completo *" value={newClientData.full_name} onChange={e => setNewClientData({...newClientData, full_name: e.target.value})} />
+                    <input className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="Nome Completo *" 
+                        value={newClientData.full_name} 
+                        onChange={e => setNewClientData({...newClientData, full_name: e.target.value})} 
+                        onBlur={e => setNewClientData({...newClientData, full_name: capitalizeName(e.target.value)})}
+                    />
                     <div className="grid grid-cols-2 gap-3">
                         <input className="p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="CPF" value={newClientData.cpf} onChange={e => setNewClientData({...newClientData, cpf: maskCPF(e.target.value)})} />
                         <input className="p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="Telefone" value={newClientData.phone} onChange={e => setNewClientData({...newClientData, phone: maskPhone(e.target.value)})} />

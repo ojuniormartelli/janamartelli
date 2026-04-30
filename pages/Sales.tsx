@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { Sale, PaymentMethod } from '../types';
-import { formatCurrency, getLocalDate } from '../utils/formatters';
+import { formatCurrency, getLocalDate, capitalizeName } from '../utils/formatters';
 import { Search, Eye, RefreshCw, CheckCircle, XCircle, ShoppingBag, AlertTriangle, FileText, Printer, Lock, Edit, User, DollarSign, Wallet, Loader, EyeOff } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -213,14 +213,14 @@ export const Sales: React.FC = () => {
                         <tr key={sale.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
                             <td className="p-4 font-mono font-bold">{sale.code}</td>
                             <td className="p-4 text-slate-500">{new Date(sale.created_at).toLocaleDateString()}</td>
-                            <td className="p-4">{sale.client?.full_name || sale.observacoes || 'Consumidor'}</td>
+                            <td className="p-4">{sale.client?.full_name ? capitalizeName(sale.client.full_name) : sale.observacoes || 'Consumidor'}</td>
                             <td className="p-4">
                                 <div className="font-bold">{formatCurrency(sale.total_value)}</div>
                                 {sale.payment_status === 'pending' && (sale as any).paid_amount > 0 && (
                                    <div className="text-[10px] text-red-500 font-bold">Falta: {formatCurrency((sale as any).remaining_balance)}</div>
                                 )}
                             </td>
-                            <td className="p-4"><span className={`px-2 py-1 rounded text-xs font-bold uppercase ${sale.status_label === 'Venda' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{sale.status_label}</span></td>
+                            <td className="p-4"><span className={`px-2 py-1 rounded text-xs font-bold ${sale.status_label === 'Venda' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{sale.status_label}</span></td>
                             <td className="p-4 text-center"><button onClick={() => handleOpenDetails(sale)} className="text-blue-500 p-2 rounded"><Eye size={18}/></button></td>
                         </tr>
                     ))}
@@ -234,21 +234,21 @@ export const Sales: React.FC = () => {
                     <div className="p-4 border-b flex justify-between items-center"><h3 className="font-bold dark:text-white">Resumo da Transação</h3><button onClick={() => setSelectedSale(null)}><XCircle size={24}/></button></div>
                     <div className="p-6 overflow-y-auto" ref={receiptRef}>
                         <div className="text-center border-b border-dashed pb-4">
-                            <h2 className="text-xl font-bold uppercase dark:text-white">{selectedSale.status_label}</h2>
+                            <h2 className="text-xl font-bold dark:text-white">{selectedSale.status_label}</h2>
                             <p className="font-mono text-lg font-bold dark:text-primary-400">{selectedSale.code}</p>
                             <p className="text-sm dark:text-slate-400">{new Date(selectedSale.created_at).toLocaleString()}</p>
                         </div>
-                        <div className="py-4"><p className="font-bold dark:text-white">{selectedSale.client?.full_name || 'Consumidor'}</p><p className="text-sm dark:text-slate-400">{selectedSale.client?.phone}</p></div>
+                        <div className="py-4"><p className="font-bold dark:text-white">{selectedSale.client?.full_name ? capitalizeName(selectedSale.client.full_name) : 'Consumidor'}</p><p className="text-sm dark:text-slate-400">{selectedSale.client?.phone}</p></div>
                         <table className="w-full text-sm my-4 border-t pt-4 dark:border-slate-700">
                             <tbody>{selectedSale.items?.map((item: any, i: number) => (
                                 <tr key={i} className="border-b dark:border-slate-700">
                                     <td className="py-2 dark:text-white">
-                                <div className="font-bold">{item.quantity}x {item.product_variation?.products?.nome}</div>
+                                <div className="font-bold">{item.quantity}x {capitalizeName(item.product_variation?.products?.nome || '')}</div>
                                 {item.product_variation?.products?.categoria && (
-                                    <div className="text-[10px] text-slate-400 uppercase italic">{item.product_variation.products.categoria}</div>
+                                    <div className="text-[10px] text-slate-400 italic">{capitalizeName(item.product_variation.products.categoria)}</div>
                                 )}
                                 <div className="text-[10px] text-slate-500 dark:text-slate-400 flex flex-wrap gap-2 mt-1">
-                                    <span className="bg-slate-100 dark:bg-slate-700 px-1 rounded"><b>Mod/Cor:</b> {item.product_variation?.model_variant || 'Padrão'}</span>
+                                    <span className="bg-slate-100 dark:bg-slate-700 px-1 rounded"><b>Mod/Cor:</b> {capitalizeName(item.product_variation?.model_variant || 'Padrão')}</span>
                                     <span className="bg-slate-100 dark:bg-slate-700 px-1 rounded"><b>Tam:</b> {item.product_variation?.size}</span>
                                     <span className="bg-slate-100 dark:bg-slate-700 px-1 rounded font-mono"><b>SKU:</b> {item.product_variation?.sku}</span>
                                 </div>

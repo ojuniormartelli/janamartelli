@@ -3,7 +3,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { Product, ProductVariation, ProductSize } from '../types';
 import { ChevronDown, ChevronRight, Plus, AlertTriangle, Loader, Trash2, Edit2, X, Save, Search, Download, Layers, Settings as SettingsIcon, Package, PlusCircle, Upload, Combine, FileSpreadsheet, FileText } from 'lucide-react';
-import { formatCurrency, parseCurrencyString } from '../utils/formatters';
+import { formatCurrency, parseCurrencyString, capitalizeName } from '../utils/formatters';
 import * as XLSX from 'xlsx';
 import { RomaneioImportModal } from '../components/RomaneioImportModal';
 
@@ -413,8 +413,8 @@ export const Inventory: React.FC = () => {
                         >
                             <td className="p-4">{expandedRow === product.id ? <ChevronDown size={18} className="text-primary-500" /> : <ChevronRight size={18} />}</td>
                             <td className="p-4 font-mono text-sm font-bold text-slate-700 dark:text-slate-200">{product.modelo}</td>
-                            <td className="p-4 font-bold dark:text-white">{product.nome}</td>
-                            <td className="p-4"><span className="px-2 py-1 bg-slate-100 dark:bg-slate-900 rounded-lg text-[10px] font-bold uppercase">{product.categoria}</span></td>
+                            <td className="p-4 font-bold dark:text-white">{capitalizeName(product.nome)}</td>
+                            <td className="p-4"><span className="px-2 py-1 bg-slate-100 dark:bg-slate-900 rounded-lg text-[10px] font-bold">{capitalizeName(product.categoria)}</span></td>
                             <td className="p-4 text-right">
                                 <span className={`font-bold ${product.variations?.reduce((acc, v) => acc + v.quantity, 0) || 0 > 0 ? 'text-primary-600' : 'text-red-500'}`}>
                                     {product.variations?.reduce((acc, v) => acc + v.quantity, 0) || 0} un
@@ -436,7 +436,7 @@ export const Inventory: React.FC = () => {
                                     <tbody className="divide-y dark:divide-slate-700">
                                         {product.variations?.map(v => (
                                         <tr key={v.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30">
-                                            <td className="p-3 font-medium dark:text-white uppercase text-[11px]">{v.model_variant}</td>
+                                            <td className="p-3 font-medium dark:text-white text-[11px]">{capitalizeName(v.model_variant)}</td>
                                             <td className="p-3 font-bold text-primary-600 uppercase">{v.size}</td>
                                             <td className="p-3 font-mono text-xs text-slate-400">{v.sku}</td>
                                             <td className="p-3 text-right text-slate-400">{formatCurrency(v.price_cost)}</td>
@@ -472,7 +472,7 @@ export const Inventory: React.FC = () => {
                     <button onClick={() => setIsRestockModalOpen(false)}><X size={18}/></button>
                 </div>
                 <div className="p-5 space-y-4">
-                    <p className="text-xs text-slate-500 font-medium">Produto: <b className="text-slate-800 dark:text-white uppercase">{restockVariation.name}</b></p>
+                    <p className="text-xs text-slate-500 font-medium">Produto: <b className="text-slate-800 dark:text-white">{capitalizeName(restockVariation.name)}</b></p>
                     <div>
                         <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Quantidade a Adicionar</label>
                         <input 
@@ -498,16 +498,28 @@ export const Inventory: React.FC = () => {
             </div>
             <div className="p-6 space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div><label className="text-xs font-bold text-slate-500 uppercase">Referência / Código</label><input placeholder="Ex: 100-02" value={newProduct.modelo} onChange={e => setNewProduct({...newProduct, modelo: e.target.value})} className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" /></div>
-                    <div><label className="text-xs font-bold text-slate-500 uppercase">Categoria</label><input placeholder="Ex: Camisola" value={newProduct.categoria} onChange={e => setNewProduct({...newProduct, categoria: e.target.value})} className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" /></div>
+                    <div><label className="text-xs font-bold text-slate-500 uppercase">Referência / Código</label><input placeholder="Ex: 100-02" value={newProduct.modelo} 
+                        onChange={e => setNewProduct({...newProduct, modelo: e.target.value})} 
+                        onBlur={e => setNewProduct({...newProduct, modelo: e.target.value.toUpperCase()})}
+                        className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" /></div>
+                    <div><label className="text-xs font-bold text-slate-500 uppercase">Categoria</label><input placeholder="Ex: Camisola" value={newProduct.categoria} 
+                        onChange={e => setNewProduct({...newProduct, categoria: e.target.value})} 
+                        onBlur={e => setNewProduct({...newProduct, categoria: capitalizeName(e.target.value)})}
+                        className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" /></div>
                 </div>
-                <div><label className="text-xs font-bold text-slate-500 uppercase">Nome do Produto</label><input placeholder="Ex: Pijama de Ursinho" value={newProduct.nome} onChange={e => setNewProduct({...newProduct, nome: e.target.value})} className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold" /></div>
+                <div><label className="text-xs font-bold text-slate-500 uppercase">Nome do Produto</label><input placeholder="Ex: Pijama de Ursinho" value={newProduct.nome} 
+                    onChange={e => setNewProduct({...newProduct, nome: e.target.value})} 
+                    onBlur={e => setNewProduct({...newProduct, nome: capitalizeName(e.target.value)})}
+                    className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold" /></div>
                 
                 <div className="bg-slate-50 dark:bg-slate-700/30 p-4 rounded-lg border dark:border-slate-600">
                     <h4 className="font-bold text-sm mb-4 dark:text-white flex items-center"><Layers size={16} className="mr-2 text-primary-500"/> Adicionar Variações</h4>
                     <div className="space-y-3">
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                            <input placeholder="Modelo/Cor" className="p-2 border rounded dark:bg-slate-800 dark:text-white" value={tempVar.model} onChange={e => setTempVar({...tempVar, model: e.target.value})} />
+                            <input placeholder="Modelo/Cor" className="p-2 border rounded dark:bg-slate-800 dark:text-white" value={tempVar.model} 
+                                onChange={e => setTempVar({...tempVar, model: e.target.value})} 
+                                onBlur={e => setTempVar({...tempVar, model: capitalizeName(e.target.value)})}
+                            />
                             <select className="p-2 border rounded dark:bg-slate-800 dark:text-white" value={tempVar.size} onChange={e => setTempVar({...tempVar, size: e.target.value})}>
                                 {sizes.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                             </select>
@@ -525,7 +537,7 @@ export const Inventory: React.FC = () => {
                 <div className="space-y-2 max-h-40 overflow-y-auto">
                     {newProduct.variations.map((v, i) => (
                         <div key={i} className="text-xs p-3 bg-white dark:bg-slate-700 border dark:border-slate-600 rounded flex justify-between items-center shadow-sm">
-                            <div className="flex flex-wrap gap-x-4 gap-y-1"><span className="font-bold dark:text-white uppercase">{v.model_variant} - {v.size}</span><span className="text-primary-600 font-bold">{formatCurrency(v.price_sale)}</span><span className="px-2 bg-green-100 text-green-700 rounded font-bold">Qtd: {v.quantity}</span></div>
+                            <div className="flex flex-wrap gap-x-4 gap-y-1"><span className="font-bold dark:text-white">{capitalizeName(v.model_variant)} - {v.size}</span><span className="text-primary-600 font-bold">{formatCurrency(v.price_sale)}</span><span className="px-2 bg-green-100 text-green-700 rounded font-bold">Qtd: {v.quantity}</span></div>
                             <button onClick={() => setNewProduct({...newProduct, variations: newProduct.variations.filter((_, idx) => idx !== i)})} className="text-red-500 p-1"><X size={16}/></button>
                         </div>
                     ))}
@@ -547,9 +559,18 @@ export const Inventory: React.FC = () => {
                 <button onClick={() => setEditingProduct(null)}><X size={20}/></button>
             </div>
             <div className="p-6 space-y-4">
-                <div><label className="text-xs font-bold text-slate-500 uppercase">Referência / Código</label><input value={editingProduct.modelo || ''} onChange={e => setEditingProduct({...editingProduct, modelo: e.target.value})} className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" /></div>
-                <div><label className="text-xs font-bold text-slate-500 uppercase">Nome</label><input value={editingProduct.nome || ''} onChange={e => setEditingProduct({...editingProduct, nome: e.target.value})} className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold" /></div>
-                <div><label className="text-xs font-bold text-slate-500 uppercase">Categoria</label><input value={editingProduct.categoria || ''} onChange={e => setEditingProduct({...editingProduct, categoria: e.target.value})} className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" /></div>
+                <div><label className="text-xs font-bold text-slate-500 uppercase">Referência / Código</label><input value={editingProduct.modelo || ''} 
+                    onChange={e => setEditingProduct({...editingProduct, modelo: e.target.value})} 
+                    onBlur={e => setEditingProduct({...editingProduct, modelo: e.target.value.toUpperCase()})}
+                    className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" /></div>
+                <div><label className="text-xs font-bold text-slate-500 uppercase">Nome</label><input value={editingProduct.nome || ''} 
+                    onChange={e => setEditingProduct({...editingProduct, nome: e.target.value})} 
+                    onBlur={e => setEditingProduct({...editingProduct, nome: capitalizeName(e.target.value)})}
+                    className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold" /></div>
+                <div><label className="text-xs font-bold text-slate-500 uppercase">Categoria</label><input value={editingProduct.categoria || ''} 
+                    onChange={e => setEditingProduct({...editingProduct, categoria: e.target.value})} 
+                    onBlur={e => setEditingProduct({...editingProduct, categoria: capitalizeName(e.target.value)})}
+                    className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" /></div>
             </div>
             <div className="p-6 border-t dark:border-slate-700 flex justify-end gap-3">
                 <button onClick={() => setEditingProduct(null)} className="px-4 py-2 text-slate-500 font-medium">Cancelar</button>
@@ -568,7 +589,10 @@ export const Inventory: React.FC = () => {
             </div>
             <div className="p-6 space-y-4">
                 <div className="grid grid-cols-2 gap-4">
-                    <div><label className="text-xs font-bold text-slate-500 uppercase">Modelo / Cor</label><input value={editingVariation.model_variant || ''} onChange={e => setEditingVariation({...editingVariation, model_variant: e.target.value})} className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" /></div>
+                    <div><label className="text-xs font-bold text-slate-500 uppercase">Modelo / Cor</label><input value={editingVariation.model_variant || ''} 
+                        onChange={e => setEditingVariation({...editingVariation, model_variant: e.target.value})} 
+                        onBlur={e => setEditingVariation({...editingVariation, model_variant: capitalizeName(e.target.value)})}
+                        className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" /></div>
                     <div><label className="text-xs font-bold text-slate-500 uppercase">Tamanho</label><select className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" value={editingVariation.size || ''} onChange={e => setEditingVariation({...editingVariation, size: e.target.value})}>{sizes.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}</select></div>
                 </div>
                 <div><label className="text-xs font-bold text-slate-500 uppercase">SKU / Cód. Barras (Opcional)</label><input value={editingVariation.sku || ''} onChange={e => setEditingVariation({...editingVariation, sku: e.target.value})} className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white font-mono" /></div>
@@ -594,7 +618,12 @@ export const Inventory: React.FC = () => {
                         <button onClick={() => setIsAddVariantModalOpen(false)}><X size={20}/></button>
                    </div>
                    <div className="p-6 space-y-4">
-                        <div><label className="text-xs font-bold text-slate-500 uppercase">Modelo / Cor</label><input placeholder="Ex: Azul" className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold" value={newVariant.model} onChange={e => setNewVariant({...newVariant, model: e.target.value})} /></div>
+                        <div><label className="text-xs font-bold text-slate-500 uppercase">Modelo / Cor</label><input placeholder="Ex: Azul" 
+                            className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold" 
+                            value={newVariant.model} 
+                            onChange={e => setNewVariant({...newVariant, model: e.target.value})} 
+                            onBlur={e => setNewVariant({...newVariant, model: capitalizeName(e.target.value)})}
+                        /></div>
                         <div className="grid grid-cols-2 gap-4">
                             <div><label className="text-xs font-bold text-slate-500 uppercase">Tamanho</label><select className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold" value={newVariant.size} onChange={e => setNewVariant({...newVariant, size: e.target.value})}>{sizes.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}</select></div>
                             <div><label className="text-xs font-bold text-slate-500 uppercase">SKU (Opcional)</label><input placeholder="Cód. Barras" className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" value={newVariant.sku} onChange={e => setNewVariant({...newVariant, sku: e.target.value})} /></div>

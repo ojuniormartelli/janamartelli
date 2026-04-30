@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { Client } from '../types';
 import { Search, Plus, FileSpreadsheet, Download, Upload, Edit2, Trash2, X, Save, Loader, MapPin, Phone, Mail, User, History, DollarSign, ArrowRight, Eye, Printer, XCircle, ShoppingBag, FileText, AlertTriangle } from 'lucide-react';
-import { maskCPF, maskPhone } from '../utils/formatters';
+import { maskCPF, maskPhone, capitalizeName } from '../utils/formatters';
 import { formatCurrency } from '../utils/formatters';
 import { processPartialPayment } from '../utils/payment';
 import { Sale, SalePayment } from '../types';
@@ -328,7 +328,7 @@ export const Clients: React.FC = () => {
                     className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer group"
                   >
                     <td className="p-4 font-medium text-slate-800 dark:text-white">
-                      {client.full_name}
+                      {capitalizeName(client.full_name)}
                       {client.total_debt! > 0 && <span className="ml-2 px-1.5 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-600 text-[10px] rounded-full font-bold">EM DÉBITO</span>}
                     </td>
                     <td className="p-4">
@@ -399,6 +399,7 @@ export const Clients: React.FC = () => {
                         <input 
                           value={formData.full_name || ''}
                           onChange={e => setFormData({...formData, full_name: e.target.value})}
+                          onBlur={e => setFormData({...formData, full_name: capitalizeName(e.target.value)})}
                           className="w-full pl-10 p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold"
                           placeholder="Ex: Ana Silva"
                         />
@@ -458,6 +459,7 @@ export const Clients: React.FC = () => {
                     <div>
                       <p className="text-xs font-bold text-slate-500 uppercase">Saldo Devedor Atual</p>
                       <p className="text-3xl font-black text-red-600">{formatCurrency(editingClient?.total_debt || 0)}</p>
+                      {editingClient?.full_name && <p className="text-[10px] text-slate-400">Cliente: {capitalizeName(editingClient.full_name)}</p>}
                     </div>
                     <button 
                       onClick={() => setIsPaymentModalOpen(true)}
@@ -572,7 +574,7 @@ export const Clients: React.FC = () => {
               <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800 flex items-start gap-3">
                 <ArrowRight size={16} className="text-blue-600 mt-0.5 shrink-0"/>
                 <p className="text-[10px] text-blue-800 dark:text-blue-300">
-                  O valor será usado para quitar as contas pendentes mais antigas de <b>{editingClient?.full_name}</b>.
+                  O valor será usado para quitar as contas pendentes mais antigas de <b>{editingClient?.full_name ? capitalizeName(editingClient.full_name) : 'este cliente'}</b>.
                 </p>
               </div>
             </div>
@@ -621,12 +623,12 @@ export const Clients: React.FC = () => {
                         {selectedDetailSale.items?.map((item: any, i: number) => (
                           <tr key={i}>
                             <td className="py-3">
-                              <div className="font-bold dark:text-white">{item.quantity}x {item.product_variation?.products?.nome}</div>
+                              <div className="font-bold dark:text-white">{item.quantity}x {capitalizeName(item.product_variation?.products?.nome || '')}</div>
                               {item.product_variation?.products?.categoria && (
-                                <div className="text-[10px] text-slate-400 uppercase italic">{item.product_variation.products.categoria}</div>
+                                <div className="text-[10px] text-slate-400 uppercase italic">{capitalizeName(item.product_variation.products.categoria)}</div>
                               )}
                               <div className="text-[10px] text-slate-500 dark:text-slate-400 flex flex-wrap gap-x-3 gap-y-1 mt-1">
-                                <span className="bg-slate-50 dark:bg-slate-700 px-1 rounded"><b>Mod/Cor:</b> {item.product_variation?.model_variant || 'Padrão'}</span>
+                                <span className="bg-slate-50 dark:bg-slate-700 px-1 rounded"><b>Mod/Cor:</b> {capitalizeName(item.product_variation?.model_variant || 'Padrão')}</span>
                                 <span className="bg-slate-50 dark:bg-slate-700 px-1 rounded"><b>Tam:</b> {item.product_variation?.size}</span>
                                 <span className="bg-slate-50 dark:bg-slate-700 px-1 rounded font-mono"><b>SKU:</b> {item.product_variation?.sku}</span>
                               </div>

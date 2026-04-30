@@ -24,7 +24,12 @@ export const RomaneioImportModal: React.FC<Props> = ({ onClose, onSuccess }) => 
     setLoading(true);
     try {
       const parsedItems = await parseRomaneioText(rawText);
-      setItems(parsedItems);
+      // Inicializar valor de venda como 0 conforme pedido
+      const itemsWithSalePrice = parsedItems.map(item => ({
+        ...item,
+        price_sale: 0
+      }));
+      setItems(itemsWithSalePrice);
       setStep(2);
     } catch (error: any) {
       alert(error.message || "Houve um erro ao processar o texto. Verifique se o conteúdo é válido.");
@@ -94,7 +99,7 @@ export const RomaneioImportModal: React.FC<Props> = ({ onClose, onSuccess }) => 
                 sku: `${item.sku}-${item.size}`, // Gerar um SKU composto
                 quantity: item.quantity,
                 price_cost: item.cost,
-                price_sale: item.cost * 1.5 // Sugestão de markup inicial
+                price_sale: item.price_sale || 0
               });
           }
         }
@@ -210,6 +215,7 @@ export const RomaneioImportModal: React.FC<Props> = ({ onClose, onSuccess }) => 
                           <th className="p-3 border-b dark:border-slate-700">Tam</th>
                           <th className="p-3 border-b dark:border-slate-700 text-right">Qtd</th>
                           <th className="p-3 border-b dark:border-slate-700 text-right">Custo</th>
+                          <th className="p-3 border-b dark:border-slate-700 text-right">Venda</th>
                           <th className="p-3 border-b dark:border-slate-700 text-center">Ações</th>
                         </tr>
                       </thead>
@@ -225,6 +231,7 @@ export const RomaneioImportModal: React.FC<Props> = ({ onClose, onSuccess }) => 
                                 <td className="p-2"><input className="w-full p-1 border rounded text-xs dark:bg-slate-700 dark:text-white" value={item.size} onChange={(e) => setItems(items.map((it, i) => i === idx ? {...it, size: e.target.value} : it))} /></td>
                                 <td className="p-2"><input type="number" className="w-full p-1 border rounded text-xs text-right dark:bg-slate-700 dark:text-white" value={item.quantity} onChange={(e) => setItems(items.map((it, i) => i === idx ? {...it, quantity: parseInt(e.target.value) || 0} : it))} /></td>
                                 <td className="p-2"><input type="number" step="0.01" className="w-full p-1 border rounded text-xs text-right dark:bg-slate-700 dark:text-white" value={item.cost} onChange={(e) => setItems(items.map((it, i) => i === idx ? {...it, cost: parseFloat(e.target.value) || 0} : it))} /></td>
+                                <td className="p-2"><input type="number" step="0.01" className="w-full p-1 border rounded text-xs text-right dark:bg-slate-700 dark:text-white font-bold" value={item.price_sale} onChange={(e) => setItems(items.map((it, i) => i === idx ? {...it, price_sale: parseFloat(e.target.value) || 0} : it))} /></td>
                                 <td className="p-2 text-center"><button onClick={() => setEditingIndex(null)} className="p-1 px-2 bg-green-600 text-white rounded text-[10px] font-bold">OK</button></td>
                               </>
                             ) : (
@@ -235,7 +242,8 @@ export const RomaneioImportModal: React.FC<Props> = ({ onClose, onSuccess }) => 
                                 <td className="p-3 text-xs dark:text-slate-300">{item.variant}</td>
                                 <td className="p-3 text-xs font-black text-center">{item.size}</td>
                                 <td className="p-3 text-xs text-right font-bold">{item.quantity}</td>
-                                <td className="p-3 text-xs text-right text-green-600 font-bold">{formatCurrency(item.cost)}</td>
+                                <td className="p-3 text-xs text-right text-slate-500 font-bold">{formatCurrency(item.cost)}</td>
+                                <td className="p-3 text-xs text-right text-green-600 font-bold">{formatCurrency(item.price_sale || 0)}</td>
                                 <td className="p-3 text-center">
                                   <div className="flex justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                     <button onClick={() => setEditingIndex(idx)} className="p-1.5 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded"><Edit2 size={14} /></button>

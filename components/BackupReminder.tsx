@@ -34,7 +34,7 @@ export const BackupReminder: React.FC = () => {
         if (config.backup_frequency === 'monthly' && diffInDays >= 30) shouldShow = true;
 
         // Se nunca fez backup, mostra o aviso após o primeiro uso
-        if (!config.last_backup_at && config.backup_frequency !== 'never') shouldShow = true;
+        if (!config.last_backup_at) shouldShow = true;
 
         if (shouldShow) {
             // Pequeno delay para não assustar o usuário assim que abre o app
