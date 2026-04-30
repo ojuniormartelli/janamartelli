@@ -6,10 +6,10 @@ let aiInstance: GoogleGenAI | null = null;
 
 function getAI() {
   if (!aiInstance) {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY || (import.meta && (import.meta as any).env?.VITE_GEMINI_API_KEY);
 
     if (!apiKey) {
-      throw new Error("Chave API do Gemini não encontrada. Certifique-se de que a variável 'GEMINI_API_KEY' está configurada.");
+      throw new Error("Chave API do Gemini não encontrada. Verifique nas configurações/Secrets se GEMINI_API_KEY ou VITE_GEMINI_API_KEY está definida.");
     }
     
     aiInstance = new GoogleGenAI({ apiKey });

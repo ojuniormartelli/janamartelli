@@ -96,6 +96,7 @@ CREATE TABLE public.clients (
   phone TEXT,
   email TEXT,
   address TEXT,
+  active BOOLEAN DEFAULT TRUE,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -311,6 +312,17 @@ NOTIFY pgrst, 'reload schema';
 `;
 
 export const dbSetupScript = fullInstallScript;
+
+export const patchClientsActiveScript = `-- =================================================================
+-- PATCH PARA CLIENTES: INATIVAÇÃO
+-- =================================================================
+
+ALTER TABLE public.clients 
+ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE;
+
+NOTIFY pgrst, 'reload schema';
+`;
+
 export const fixSequencesSQL = `-- Correção de Sequências (Sincroniza todos os IDs do banco)
 DO $$
 DECLARE
