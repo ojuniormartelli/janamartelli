@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { Client } from '../types';
-import { Search, Plus, FileSpreadsheet, Download, Upload, Edit2, Trash2, X, Save, Loader, MapPin, Phone, Mail, User, History, DollarSign, ArrowRight, Eye, Printer, XCircle, ShoppingBag, FileText, AlertTriangle } from 'lucide-react';
+import { Search, Plus, FileSpreadsheet, Download, Upload, Edit2, Trash2, X, Save, Loader, MapPin, Phone, MessageCircle, Mail, User, History, DollarSign, ArrowRight, Eye, Printer, XCircle, ShoppingBag, FileText, AlertTriangle } from 'lucide-react';
 import { maskCPF, maskPhone, capitalizeName } from '../utils/formatters';
 import { formatCurrency } from '../utils/formatters';
 import { processPartialPayment } from '../utils/payment';
@@ -33,12 +33,14 @@ export const Clients: React.FC = () => {
     cpf: '',
     phone: '',
     email: '',
-    address: ''
+    address: '',
+    active: true
   });
 
   // Import State
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
+  const [showInactive, setShowInactive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dbUrl = (supabase as any).supabaseUrl;
 
@@ -135,13 +137,14 @@ export const Clients: React.FC = () => {
         cpf: client.cpf || '',
         phone: client.phone || '',
         email: client.email || '',
-        address: client.address || ''
+        address: client.address || '',
+        active: client.active !== false
       });
       fetchClientHistory(client.id);
     } else {
       setEditingClient(null);
       setIsReadOnly(false);
-      setFormData({ full_name: '', cpf: '', phone: '', email: '', address: '' });
+      setFormData({ full_name: '', cpf: '', phone: '', email: '', address: '', active: true });
       setClientHistory([]);
     }
     setIsModalOpen(true);
@@ -215,7 +218,7 @@ export const Clients: React.FC = () => {
         const { error } = await supabase.from('clients').update(payload).eq('id', editingClient.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('clients').insert(payload);
+        const { error } = await supabase.from('clients').insert({ ...payload, active: true });
         if (error) throw error;
       }
       setIsModalOpen(false);
@@ -227,21 +230,50 @@ export const Clients: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Tem certeza que deseja excluir este cliente? Isso removerá permanentemente o cadastro.")) return;
+    const client = clients.find(c => c.id === id);
+    if (!client) return;
+
+    if (!confirm(`Tem certeza que deseja remover o cadastro de ${client.full_name}?`)) return;
     
     setLoading(true);
     try {
-      const { error } = await supabase.from('clients').delete().eq('id', id);
-      if (error) {
-        console.error("Erro ao deletar cliente:", error);
-        alert(`Erro ao excluir: ${error.message}. O cliente pode ter vendas vinculadas que impedem a exclusão.`);
+      // Check if client has sales
+      const { count, error: countErr } = await supabase
+        .from('vendas')
+        .select('id', { count: 'exact', head: true })
+        .eq('client_id', id);
+
+      if (countErr) throw countErr;
+
+      if (count && count > 0) {
+        // Has sales: Inactivate
+        const { error: updateErr } = await supabase
+          .from('clients')
+          .update({ active: false })
+          .eq('id', id);
+        
+        if (updateErr) throw updateErr;
+        alert("O cliente possui vendas vinculadas e foi inativado ao invés de excluído.");
       } else {
-        alert("Cliente excluído com sucesso!");
-        fetchClients();
+        // No sales: Permanent Delete
+        const { error: deleteErr } = await supabase
+          .from('clients')
+          .delete()
+          .eq('id', id);
+        
+        if (deleteErr) {
+           // Fallback to inactivation if delete fails for any reason (e.g. constraints not caught by count)
+           console.warn("Delete failed, attempting inactivation instead:", deleteErr);
+           await supabase.from('clients').update({ active: false }).eq('id', id);
+           alert("O cliente foi inativado.");
+        } else {
+          alert("Cliente excluído com sucesso!");
+        }
       }
+      fetchClients();
     } catch (err: any) {
-      console.error("Exceção ao deletar:", err);
-      alert("Erro inesperado ao excluir: " + err.message);
+      console.error("Erro ao processar exclusão:", err);
+      alert("Erro ao processar exclusão: " + (err.message || String(err)));
     } finally {
       setLoading(false);
     }
@@ -324,11 +356,24 @@ export const Clients: React.FC = () => {
     }).join(' ');
   };
 
-  const filteredClients = clients.filter(c => 
-    (c.full_name || '').toLowerCase().includes(search.toLowerCase()) || 
-    (c.cpf || '').includes(search) || 
-    (c.phone || '').includes(search)
-  );
+  const getWhatsAppLink = (phone: string) => {
+    let clean = phone.replace(/\D/g, '');
+    if (!clean) return '#';
+    if (!clean.startsWith('55') && clean.length >= 10) {
+      clean = '55' + clean;
+    }
+    return `https://wa.me/${clean}`;
+  };
+
+  const filteredClients = clients.filter(c => {
+    const matchesSearch = (c.full_name || '').toLowerCase().includes(search.toLowerCase()) || 
+      (c.cpf || '').includes(search) || 
+      (c.phone || '').includes(search);
+    
+    const matchesActive = showInactive ? true : (c.active !== false);
+    
+    return matchesSearch && matchesActive;
+  });
 
   return (
     <div className="space-y-6">
@@ -341,6 +386,13 @@ export const Clients: React.FC = () => {
         </div>
 
         <div className="flex gap-2 w-full md:w-auto">
+          <button 
+            onClick={() => setShowInactive(!showInactive)} 
+            className={`p-2 border rounded transition-colors ${showInactive ? 'bg-amber-100 text-amber-700 border-amber-200' : 'text-slate-600 bg-white hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'}`} 
+            title={showInactive ? "Ocultar Inativos" : "Mostrar Inativos"}
+          >
+            {showInactive ? <XCircle size={20} /> : <Eye size={20} />}
+          </button>
           <button onClick={fetchClients} className="p-2 text-slate-600 bg-white border rounded hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700" title="Atualizar Lista">
             <History size={20} className={loading ? 'animate-spin' : ''} />
           </button>
@@ -398,13 +450,30 @@ export const Clients: React.FC = () => {
                     className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer group"
                   >
                     <td className="p-4 font-medium text-slate-800 dark:text-white">
-                      {capitalizeName(client.full_name)}
-                      {client.total_debt! > 0 && <span className="ml-2 px-1.5 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-600 text-[10px] rounded-full font-bold">EM DÉBITO</span>}
+                      <div className="flex items-center gap-2">
+                        {capitalizeName(client.full_name)}
+                        {client.active === false && <span className="px-1.5 py-0.5 bg-slate-200 text-slate-600 text-[10px] rounded font-bold">INATIVO</span>}
+                        {client.total_debt! > 0 && <span className="ml-2 px-1.5 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-600 text-[10px] rounded-full font-bold">EM DÉBITO</span>}
+                      </div>
                     </td>
                     <td className="p-4">
                       <div className="text-slate-600 dark:text-slate-300 font-mono text-xs mb-1">{client.cpf}</div>
                       <div className="text-xs text-slate-500 dark:text-slate-400 flex flex-col">
-                        {client.phone && <span className="flex items-center"><Phone size={10} className="mr-1"/> {client.phone}</span>}
+                        {client.phone && (
+                          <div className="flex items-center gap-2">
+                            <span className="flex items-center"><Phone size={10} className="mr-1"/> {maskPhone(client.phone)}</span>
+                            <a 
+                              href={getWhatsAppLink(client.phone)} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-green-500 hover:text-green-600 transition-colors"
+                              onClick={(e) => e.stopPropagation()}
+                              title="Abrir no WhatsApp"
+                            >
+                              <MessageCircle size={14} />
+                            </a>
+                          </div>
+                        )}
                       </div>
                     </td>
                     <td className="p-4 text-slate-500 dark:text-slate-400 text-sm hidden md:table-cell truncate max-w-xs" title={client.address}>
@@ -495,13 +564,26 @@ export const Clients: React.FC = () => {
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Telefone</label>
-                      <input 
-                        value={formData.phone || ''}
-                        onChange={e => setFormData({...formData, phone: maskPhone(e.target.value)})}
-                        className={`w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white ${isReadOnly ? 'bg-slate-50 border-transparent cursor-not-allowed' : ''}`}
-                        placeholder="(00) 00000-0000"
-                        readOnly={isReadOnly}
-                      />
+                      <div className="relative">
+                        <input 
+                          value={formData.phone ? maskPhone(formData.phone) : ''}
+                          onChange={e => setFormData({...formData, phone: maskPhone(e.target.value)})}
+                          className={`w-full p-3 border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white ${isReadOnly ? 'bg-slate-50 border-transparent cursor-not-allowed pr-10' : ''}`}
+                          placeholder="(00) 00000-0000"
+                          readOnly={isReadOnly}
+                        />
+                        {isReadOnly && formData.phone && (
+                          <a 
+                            href={getWhatsAppLink(formData.phone)} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500 hover:text-green-600 transition-all active:scale-110"
+                            title="Chat no WhatsApp"
+                          >
+                            <MessageCircle size={20} />
+                          </a>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -532,6 +614,21 @@ export const Clients: React.FC = () => {
                         />
                     </div>
                   </div>
+
+                  {!isReadOnly && (
+                    <div className="flex items-center gap-2 p-2 bg-slate-50 dark:bg-slate-900/50 rounded-lg border dark:border-slate-700">
+                      <input 
+                        type="checkbox"
+                        id="client-active"
+                        checked={formData.active}
+                        onChange={e => setFormData({...formData, active: e.target.checked})}
+                        className="w-5 h-5 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                      />
+                      <label htmlFor="client-active" className="text-sm font-bold text-slate-700 dark:text-slate-200 cursor-pointer">
+                        Cadastro Ativo
+                      </label>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="p-6">

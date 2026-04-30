@@ -38,11 +38,24 @@ export const maskCPF = (value: string) => {
 };
 
 export const maskPhone = (value: string) => {
-  return value
-    .replace(/\D/g, '')
-    .replace(/(\d{2})(\d)/, '($1) $2')
-    .replace(/(\d{5})(\d)/, '$1-$2')
-    .replace(/(-\d{4})\d+?$/, '$1');
+  let v = value.replace(/\D/g, '');
+  
+  // If it starts with 55 and has enough digits to be an international format for Brazil
+  if (v.startsWith('55') && v.length > 10) {
+    v = v.substring(2);
+  }
+
+  if (v.length <= 10) { // Fix or Mobile without leading 9
+    return v
+      .replace(/(\d{2})(\d)/, '($1) $2')
+      .replace(/(\d{4})(\d)/, '$1-$2')
+      .replace(/(-\d{4})\d+?$/, '$1');
+  } else { // Mobile with leading 9
+    return v
+      .replace(/(\d{2})(\d)/, '($1) $2')
+      .replace(/(\d{5})(\d)/, '$1-$2')
+      .replace(/(-\d{4})\d+?$/, '$1');
+  }
 };
 
 export const capitalizeName = (name: string) => {
