@@ -5,10 +5,18 @@ let aiInstance: GoogleGenAI | null = null;
 
 function getAI() {
   if (!aiInstance) {
-    const apiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error("Chave API do Gemini não encontrada. Por favor, adicione a variável 'VITE_GEMINI_API_KEY' nas configurações da sua Vercel.");
+    // Tenta pegar de várias formas possíveis em diferentes ambientes
+    const apiKey = 
+      import.meta.env.VITE_GEMINI_API_KEY || 
+      (import.meta as any).env?.VITE_GEMINI_API_KEY || 
+      process.env.GEMINI_API_KEY ||
+      (process.env as any).VITE_GEMINI_API_KEY;
+
+    if (!apiKey || apiKey === 'undefined' || apiKey === '') {
+      throw new Error("Chave API do Gemini não encontrada. Certifique-se de que a variável 'VITE_GEMINI_API_KEY' está configurada corretamente no painel da Vercel e que você fez um novo Deploy após salvá-la.");
     }
+    
+    // Inicializa com o objeto de configuração para maior clareza
     aiInstance = new GoogleGenAI(apiKey);
   }
   return aiInstance;
@@ -44,7 +52,8 @@ export async function parseRomaneioText(text: string): Promise<RomaneioItem[]> {
 
   try {
     const ai = getAI();
-    const model = ai.getGenerativeModel({ model: "gemini-3-flash-preview" });
+    // Usando gemini-1.5-flash que é mais estável para produção
+    const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
     
     const response = await model.generateContent({
       contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -74,7 +83,7 @@ export async function parseRomaneioText(text: string): Promise<RomaneioItem[]> {
   } catch (error: any) {
     console.error("Erro ao processar romaneio com Gemini:", error);
     if (error.message?.includes("API key")) {
-        throw new Error("Erro de Autenticação: A chave do Gemini não foi encontrada ou é inválida.");
+        throw new Error("Erro de Autenticação: A chave do Gemini não foi processada corretamente. Verifique se a variável VITE_GEMINI_API_KEY está visível no ambiente de build.");
     }
     throw new Error("Falha ao processar o texto do romaneio: " + error.message);
   }
