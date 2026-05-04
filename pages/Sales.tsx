@@ -36,28 +36,49 @@ export const Sales: React.FC = () => {
 
   const fetchSales = async () => {
     setLoading(true);
-    const { data } = await supabase
-      .from('vendas')
-      .select(`
-        *, 
-        client:clients(full_name, cpf, address, phone, email), 
-        items:venda_itens(*, product_variation:estoque_tamanhos(*, products(*))),
-        payments:venda_pagamentos(*)
-      `)
-      .order('created_at', { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from('vendas')
+        .select(`
+          *, 
+          client:clients(full_name, cpf, address, phone, email), 
+          items:venda_itens(*, product_variation:estoque_tamanhos(*, products(*))),
+          payments:venda_pagamentos(*)
+        `)
+        .order('created_at', { ascending: false });
 
-    if (data) {
-        const enrichedSales = (data as any[]).map(sale => {
-            const paid = (sale.payments || []).reduce((acc: number, p: any) => acc + Number(p.amount), 0);
-            return {
-                ...sale,
-                paid_amount: paid,
-                remaining_balance: Number(sale.total_value) - paid
-            };
-        });
-        setSales(enrichedSales);
+      if (error) {
+        console.error("Erro ao buscar vendas:", error);
+        alert("Erro ao carregar dados do servidor.");
+      }
+
+      if (data) {
+          const enrichedSales = (data as any[]).map(sale => {
+              const paid = (sale.payments || []).reduce((acc: number, p: any) => acc + Number(p.amount), 0);
+              const remaining = Number(sale.total_value) - paid;
+
+              // Fallback para status_label caso esteja nulo no banco
+              let statusLabel = sale.status_label;
+              if (!statusLabel && sale.code) {
+                  if (sale.code.startsWith('V')) statusLabel = 'Venda';
+                  else if (sale.code.startsWith('C')) statusLabel = 'Condicional';
+                  else if (sale.code.startsWith('B')) statusLabel = 'Baixa';
+              }
+
+              return {
+                  ...sale,
+                  status_label: statusLabel,
+                  paid_amount: paid,
+                  remaining_balance: Math.max(0, remaining)
+              };
+          });
+          setSales(enrichedSales);
+      }
+    } catch (err) {
+      console.error("Erro crítico ao buscar vendas:", err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const fetchPaymentMethods = async () => {
@@ -179,26 +200,72 @@ export const Sales: React.FC = () => {
       fetchSales();
   };
 
-  const filteredSales = sales.filter(s => {
-      let tabMatch = (activeTab === 'sales' && (s.status_label === 'Venda' || s.status_label === 'Devolução')) ||
-                     (activeTab === 'conditionals' && (s.status_label === 'Condicional' || s.status_label === 'Convertida')) ||
-                     (activeTab === 'losses' && s.status_label === 'Baixa');
+    const filteredSales = sales.filter(s => {
+        const label = (s.status_label || '').trim();
+        const labelLower = label.toLowerCase();
+        
+        const isVenda = label === 'Venda' || label === 'Devolução';
+        const isCondicional = label === 'Condicional' || label === 'Convertida' || label === 'Orçamento' || labelLower.includes('consignad');
+        const isBaixa = label === 'Baixa' || label === 'Perda';
 
-      const searchMatch = !search || s.code?.toLowerCase().includes(search.toLowerCase()) || s.client?.full_name.toLowerCase().includes(search.toLowerCase());
-      return tabMatch && searchMatch;
-  });
+        let tabMatch = (activeTab === 'sales' && isVenda) ||
+                       (activeTab === 'conditionals' && isCondicional) ||
+                       (activeTab === 'losses' && isBaixa);
+
+        const searchMatch = !search || 
+            s.code?.toLowerCase().includes(search.toLowerCase()) || 
+            s.client?.full_name?.toLowerCase().includes(search.toLowerCase());
+
+        return tabMatch && searchMatch;
+    });
+
+    const counts = {
+        sales: sales.filter(s => {
+            const l = (s.status_label || '').trim();
+            return l === 'Venda' || l === 'Devolução';
+        }).length,
+        conditionals: sales.filter(s => {
+            const l = (s.status_label || '').trim();
+            const lLower = l.toLowerCase();
+            return l === 'Condicional' || l === 'Convertida' || l === 'Orçamento' || lLower.includes('consignad');
+        }).length,
+        losses: sales.filter(s => {
+            const l = (s.status_label || '').trim();
+            return l === 'Baixa' || l === 'Perda';
+        }).length
+    };
 
   return (
     <div className="space-y-6">
         <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-            <div><h2 className="text-2xl font-bold text-slate-800 dark:text-white">Movimentações</h2><p className="text-slate-500 text-sm">Gerencie vendas e condicionais</p></div>
-            <div className="relative w-full md:w-64"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar Código..." className="w-full pl-10 p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" /></div>
+            <div>
+                <h2 className="text-2xl font-bold text-slate-800 dark:text-white">Movimentações</h2>
+                <p className="text-slate-500 text-sm">Gerencie vendas e condicionais</p>
+            </div>
+            <div className="flex items-center gap-2 w-full md:w-auto">
+                <button onClick={fetchSales} disabled={loading} className="p-2 border rounded dark:bg-slate-700 dark:border-slate-600 text-slate-500 hover:text-primary-600 dark:text-slate-400 transition-colors">
+                    <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
+                </button>
+                <div className="relative flex-1 md:w-64">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar Código ou Cliente..." className="w-full pl-10 p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
+                </div>
+            </div>
         </div>
 
         <div className="flex space-x-2 border-b border-slate-200 dark:border-slate-700">
-            <button onClick={() => setActiveTab('sales')} className={`flex items-center px-6 py-3 font-bold text-sm transition-all border-b-2 ${activeTab === 'sales' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500'}`}><ShoppingBag size={16} className="mr-2"/> Vendas</button>
-            <button onClick={() => setActiveTab('conditionals')} className={`flex items-center px-6 py-3 font-bold text-sm transition-all border-b-2 ${activeTab === 'conditionals' ? 'border-amber-500 text-amber-600' : 'border-transparent text-slate-500'}`}><FileText size={16} className="mr-2"/> Condicionais</button>
-            <button onClick={() => setActiveTab('losses')} className={`flex items-center px-6 py-3 font-bold text-sm transition-all border-b-2 ${activeTab === 'losses' ? 'border-red-500 text-red-600' : 'border-transparent text-slate-500'}`}><AlertTriangle size={16} className="mr-2"/> Baixas</button>
+            <button onClick={() => setActiveTab('sales')} className={`flex items-center px-6 py-3 font-bold text-sm transition-all border-b-2 ${activeTab === 'sales' ? 'border-primary-600 text-primary-600 bg-primary-50 dark:bg-primary-900/10' : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}>
+                <ShoppingBag size={16} className="mr-2"/> Vendas
+                <span className="ml-2 bg-slate-100 dark:bg-slate-700 text-[10px] px-1.5 py-0.5 rounded-full">{counts.sales}</span>
+            </button>
+            <button onClick={() => setActiveTab('conditionals')} className={`flex items-center px-6 py-3 font-bold text-sm transition-all border-b-2 ${activeTab === 'conditionals' ? 'border-amber-500 text-amber-600 bg-amber-50 dark:bg-amber-900/10' : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}>
+                <FileText size={16} className="mr-2"/> Consignações
+                <span className="ml-2 bg-amber-100 dark:bg-amber-900/30 text-[10px] px-1.5 py-0.5 rounded-full">{counts.conditionals}</span>
+            </button>
+            <button onClick={() => setActiveTab('losses')} className={`flex items-center px-6 py-3 font-bold text-sm transition-all border-b-2 ${activeTab === 'losses' ? 'border-red-500 text-red-600 bg-red-50 dark:bg-red-900/10' : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}>
+                <AlertTriangle size={16} className="mr-2"/> Baixas
+                <span className="ml-2 bg-red-100 dark:bg-red-900/30 text-[10px] px-1.5 py-0.5 rounded-full">{counts.losses}</span>
+            </button>
         </div>
 
         <div className="bg-white dark:bg-slate-800 rounded-lg shadow overflow-hidden">
@@ -206,22 +273,32 @@ export const Sales: React.FC = () => {
                 <thead className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
                     <tr><th className="p-4">Código</th><th className="p-4">Data</th><th className="p-4">Cliente</th><th className="p-4">Total</th><th className="p-4">Status</th><th className="p-4 text-center">Ações</th></tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-slate-700 dark:text-slate-300">
                     {loading ? <tr><td colSpan={6} className="p-6 text-center"><Loader className="animate-spin mx-auto"/></td></tr> : 
-                     filteredSales.length === 0 ? <tr><td colSpan={6} className="p-6 text-center text-slate-500 py-12">Nenhum registro.</td></tr> :
+                     filteredSales.length === 0 ? <tr><td colSpan={6} className="p-6 text-center text-slate-500 py-12">Nenhum registro encontrado nesta aba.</td></tr> :
                      filteredSales.map(sale => (
                         <tr key={sale.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
-                            <td className="p-4 font-mono font-bold">{sale.code}</td>
+                            <td className="p-4 font-mono font-bold dark:text-white">{sale.code}</td>
                             <td className="p-4 text-slate-500">{new Date(sale.created_at).toLocaleDateString()}</td>
                             <td className="p-4">{sale.client?.full_name ? capitalizeName(sale.client.full_name) : sale.observacoes || 'Consumidor'}</td>
                             <td className="p-4">
-                                <div className="font-bold">{formatCurrency(sale.total_value)}</div>
+                                <div className="font-bold dark:text-white">{formatCurrency(sale.total_value)}</div>
                                 {sale.payment_status === 'pending' && (sale as any).paid_amount > 0 && (
                                    <div className="text-[10px] text-red-500 font-bold">Falta: {formatCurrency((sale as any).remaining_balance)}</div>
                                 )}
                             </td>
-                            <td className="p-4"><span className={`px-2 py-1 rounded text-xs font-bold ${sale.status_label === 'Venda' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{sale.status_label}</span></td>
-                            <td className="p-4 text-center"><button onClick={() => handleOpenDetails(sale)} className="text-blue-500 p-2 rounded"><Eye size={18}/></button></td>
+                            <td className="p-4">
+                                <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${
+                                    sale.status_label === 'Venda' ? 'bg-green-100 text-green-700' : 
+                                    (sale.status_label === 'Condicional' || sale.status_label === 'Orçamento' || (sale.status_label || '').toLowerCase().includes('consignad')) ? 'bg-amber-100 text-amber-700' :
+                                    sale.status_label === 'Convertida' ? 'bg-blue-100 text-blue-700' :
+                                    (sale.status_label === 'Baixa' || sale.status_label === 'Perda') ? 'bg-orange-100 text-orange-700' :
+                                    'bg-red-100 text-red-700'
+                                }`}>
+                                    {sale.status_label}
+                                </span>
+                            </td>
+                            <td className="p-4 text-center"><button onClick={() => handleOpenDetails(sale)} className="text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 p-2 rounded transition-colors"><Eye size={18}/></button></td>
                         </tr>
                     ))}
                 </tbody>

@@ -71,7 +71,10 @@ export const Inventory: React.FC = () => {
         filtered = products.filter(p => 
             p.nome.toLowerCase().includes(q) || 
             (p.modelo && p.modelo.toLowerCase().includes(q)) ||
-            p.variations?.some(v => v.sku.toLowerCase().includes(q) || v.model_variant.toLowerCase().includes(q))
+            p.variations?.some(v => 
+              v.sku?.toLowerCase().includes(q) || 
+              v.model_variant?.toLowerCase().includes(q)
+            )
         );
     }
     return filtered.sort((a, b) => {

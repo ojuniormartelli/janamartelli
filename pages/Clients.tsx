@@ -671,7 +671,11 @@ export const Clients: React.FC = () => {
                               <div className="flex justify-between items-start mb-2">
                                 <div>
                                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                                    sale.status_label === 'Venda' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
+                                    sale.status_label === 'Venda' ? 'bg-green-100 text-green-700' : 
+                                    (sale.status_label === 'Condicional' || (sale.status_label || '').toLowerCase().includes('consignad')) ? 'bg-amber-100 text-amber-700' :
+                                    sale.status_label === 'Convertida' ? 'bg-blue-100 text-blue-700' :
+                                    sale.status_label === 'Baixa' ? 'bg-orange-100 text-orange-700' :
+                                    'bg-red-100 text-red-700'
                                   }`}>{sale.status_label} #{sale.code}</span>
                                   <p className="text-[10px] text-slate-400 mt-1">{new Date(sale.created_at).toLocaleString()}</p>
                                 </div>

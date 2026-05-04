@@ -385,7 +385,10 @@ export const POS: React.FC = () => {
 
   const filteredProducts = products.filter(p => 
     p.nome.toLowerCase().includes(search.toLowerCase()) || 
-    p.variations?.some(v => v.model_variant.toLowerCase().includes(search.toLowerCase()) || v.sku.toLowerCase().includes(search.toLowerCase()))
+    p.variations?.some(v => 
+      (v.model_variant?.toLowerCase().includes(search.toLowerCase())) || 
+      (v.sku?.toLowerCase().includes(search.toLowerCase()))
+    )
   );
 
   return (
@@ -515,7 +518,7 @@ export const POS: React.FC = () => {
 
             <div className="grid grid-cols-2 gap-3">
                 <button onClick={() => handleOpenPayment('quote')} disabled={cart.length === 0} className="py-3 bg-amber-100 text-amber-800 rounded-lg font-bold border border-amber-200 disabled:opacity-50 text-sm flex flex-col items-center justify-center">
-                    <ClipboardList size={16} className="mb-1"/> Condicional
+                    <ClipboardList size={16} className="mb-1"/> Condicional / Consignado
                 </button>
                 <button onClick={() => handleOpenPayment('sale')} disabled={cart.length === 0} className="py-3 bg-primary-600 text-white rounded-lg font-bold shadow-lg disabled:opacity-50 text-sm flex items-center justify-center">
                     <CheckCircle size={18} className="mr-2"/> Finalizar
