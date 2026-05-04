@@ -40,7 +40,7 @@ export const Sales: React.FC = () => {
       const { data, error } = await supabase
         .from('vendas')
         .select(`
-          *, 
+          id, code, created_at, total_value, status_label, payment_status, payment_method, observacoes, client_id,
           client:clients(full_name, cpf, address, phone, email), 
           items:venda_itens(*, product_variation:estoque_tamanhos(*, products(*))),
           payments:venda_pagamentos(*)
@@ -205,7 +205,7 @@ export const Sales: React.FC = () => {
         const labelLower = label.toLowerCase();
         
         const isVenda = label === 'Venda' || label === 'Devolução';
-        const isCondicional = label === 'Condicional' || label === 'Convertida' || label === 'Orçamento' || labelLower.includes('consignad');
+        const isCondicional = s.status_label?.trim().toLowerCase().includes('condicional') || labelLower.includes('consignad') || label === 'Orçamento' || label === 'Convertida';
         const isBaixa = label === 'Baixa' || label === 'Perda';
 
         let tabMatch = (activeTab === 'sales' && isVenda) ||
@@ -227,7 +227,7 @@ export const Sales: React.FC = () => {
         conditionals: sales.filter(s => {
             const l = (s.status_label || '').trim();
             const lLower = l.toLowerCase();
-            return l === 'Condicional' || l === 'Convertida' || l === 'Orçamento' || lLower.includes('consignad');
+            return s.status_label?.trim().toLowerCase().includes('condicional') || lLower.includes('consignad') || l === 'Orçamento' || l === 'Convertida';
         }).length,
         losses: sales.filter(s => {
             const l = (s.status_label || '').trim();
