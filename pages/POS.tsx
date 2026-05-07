@@ -278,58 +278,7 @@ export const POS: React.FC = () => {
   };
 
   const finalizeTransaction = async () => {
-    let clientId = selectedClient;
-
-    // Se não houver cliente selecionado, tenta encontrar ou criar o "Consumidor Final"
-    if (!clientId) {
-        try {
-            const { data: existingDefault } = await supabase
-                .from('clients')
-                .select('id')
-                .eq('full_name', 'Consumidor Final')
-                .maybeSingle();
-
-            if (existingDefault) {
-                clientId = existingDefault.id;
-            } else {
-                // Cria o cliente Consumidor Final
-                const newClient = {
-                    full_name: 'Consumidor Final',
-                    cpf: '000.000.000-00',
-                    phone: '',
-                    email: 'consumidor@final.com',
-                    address: 'Venda de Balcão'
-                };
-                
-                // Tenta com active: true primeiro
-                let { data: created, error: createError } = await supabase
-                    .from('clients')
-                    .insert({ ...newClient, active: true })
-                    .select()
-                    .single();
-                
-                if (createError && (createError.message?.includes("'active'") || createError.details?.includes("'active'"))) {
-                    // Tenta sem active
-                    const { data: retryCreated, error: retryError } = await supabase
-                        .from('clients')
-                        .insert(newClient)
-                        .select()
-                        .single();
-                    if (retryError) throw retryError;
-                    created = retryCreated;
-                } else if (createError) {
-                    throw createError;
-                }
-
-                clientId = created?.id || '';
-            }
-        } catch (err) {
-            console.error("Erro ao tratar cliente Consumidor Final:", err);
-            // Se falhar a criação do cliente, tenta passar null se o banco permitir, ou aborta
-            // Para segurança, vamos tentar prosseguir com null
-            clientId = '';
-        }
-    }
+    const clientId = selectedClient || null;
 
     const prefix = transactionType === 'sale' ? 'V' : 'C';
     const { data: code } = await supabase.rpc('get_next_code', { prefix });
@@ -421,21 +370,16 @@ export const POS: React.FC = () => {
       if (!newClientData.full_name) return alert("Nome é obrigatório");
       try {
           const payload = {
-              ...newClientData,
               full_name: capitalizeName(newClientData.full_name.trim()),
-              email: newClientData.email.trim().toLowerCase()
+              cpf: newClientData.cpf.trim(),
+              phone: newClientData.phone.trim(),
+              email: newClientData.email.trim().toLowerCase(),
+              address: newClientData.address.trim()
           };
           
-          let { data, error } = await supabase.from('clients').insert([{ ...payload, active: true }]).select().single();
+          const { data, error } = await supabase.from('clients').insert([payload]).select().single();
           
-          if (error && (error.message?.includes("'active'") || error.details?.includes("'active'"))) {
-              // Tenta sem active
-              const { data: retryData, error: retryError } = await supabase.from('clients').insert([payload]).select().single();
-              if (retryError) throw retryError;
-              data = retryData;
-          } else if (error) {
-              throw error;
-          }
+          if (error) throw error;
 
           if (data) {
               setClients(prev => [...prev, data].sort((a,b) => a.full_name.localeCompare(b.full_name)));

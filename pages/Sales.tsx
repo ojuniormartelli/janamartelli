@@ -280,7 +280,7 @@ export const Sales: React.FC = () => {
                         <tr key={sale.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
                             <td className="p-4 font-mono font-bold dark:text-white">{sale.code}</td>
                             <td className="p-4 text-slate-500">{new Date(sale.created_at).toLocaleDateString()}</td>
-                            <td className="p-4">{sale.client?.full_name ? capitalizeName(sale.client.full_name) : sale.observacoes || 'Consumidor'}</td>
+                            <td className="p-4">{sale.client?.full_name ? capitalizeName(sale.client.full_name) : <span className="text-slate-400 italic">Consumidor Final</span>}</td>
                             <td className="p-4">
                                 <div className="font-bold dark:text-white">{formatCurrency(sale.total_value)}</div>
                                 {sale.payment_status === 'pending' && (sale as any).paid_amount > 0 && (
@@ -315,7 +315,12 @@ export const Sales: React.FC = () => {
                             <p className="font-mono text-lg font-bold dark:text-primary-400">{selectedSale.code}</p>
                             <p className="text-sm dark:text-slate-400">{new Date(selectedSale.created_at).toLocaleString()}</p>
                         </div>
-                        <div className="py-4"><p className="font-bold dark:text-white">{selectedSale.client?.full_name ? capitalizeName(selectedSale.client.full_name) : 'Consumidor'}</p><p className="text-sm dark:text-slate-400">{selectedSale.client?.phone}</p></div>
+                        <div className="py-4">
+                            <p className="font-bold dark:text-white">
+                                {selectedSale.client?.full_name ? capitalizeName(selectedSale.client.full_name) : <span className="text-slate-400 italic">Consumidor Final (Venda de Balcão)</span>}
+                            </p>
+                            {selectedSale.client?.phone && <p className="text-sm dark:text-slate-400">{selectedSale.client.phone}</p>}
+                        </div>
                         <table className="w-full text-sm my-4 border-t pt-4 dark:border-slate-700">
                             <tbody>{selectedSale.items?.map((item: any, i: number) => (
                                 <tr key={i} className="border-b dark:border-slate-700">

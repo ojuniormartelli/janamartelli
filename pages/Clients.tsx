@@ -40,7 +40,7 @@ export const Clients: React.FC = () => {
   // Import State
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
-  const [showInactive, setShowInactive] = useState(false);
+  const [showInactive, setShowInactive] = useState(false); // Mantido apenas para não quebrar UI caso queira usar no futuro, mas sem efeito real no filtro agora
   const [error, setError] = useState<string | null>(null);
   const dbUrl = (supabase as any).supabaseUrl;
 
@@ -208,52 +208,26 @@ export const Clients: React.FC = () => {
     if (!formData.full_name) return alert("Nome é obrigatório");
 
     const payload = { 
-      ...formData,
       full_name: capitalizeName(formData.full_name.trim()),
-      email: formData.email.trim().toLowerCase()
+      cpf: formData.cpf.trim(),
+      phone: formData.phone.trim(),
+      email: formData.email.trim().toLowerCase(),
+      address: formData.address.trim()
     };
 
     try {
       if (editingClient) {
         const { error } = await supabase.from('clients').update(payload).eq('id', editingClient.id);
-        
-        if (error) {
-          // Se o erro for a falta da coluna 'active', tenta novamente sem ela
-          if (error.message?.includes("'active'") || error.details?.includes("'active'")) {
-            const { active, ...noActivePayload } = payload as any;
-            const { error: retryError } = await supabase.from('clients').update(noActivePayload).eq('id', editingClient.id);
-            if (retryError) throw retryError;
-          } else {
-            throw error;
-          }
-        }
+        if (error) throw error;
       } else {
-        // Para novos clientes, tenta com active: true primeiro
-        const { error } = await supabase.from('clients').insert({ ...payload, active: true });
-        
-        if (error) {
-          // Se falhar por causa da coluna 'active', tenta sem ela
-          if (error.message?.includes("'active'") || error.details?.includes("'active'")) {
-            const { error: retryError } = await supabase.from('clients').insert(payload);
-            if (retryError) throw retryError;
-          } else {
-            throw error;
-          }
-        }
+        const { error } = await supabase.from('clients').insert(payload);
+        if (error) throw error;
       }
       setIsModalOpen(false);
       fetchClients();
     } catch (error: any) {
       console.error("Erro ao salvar cliente:", error);
-      
-      let friendlyMessage = "Erro ao salvar cliente.";
-      if (error.message?.includes("'active'")) {
-        friendlyMessage = "A coluna 'active' não foi encontrada no banco de dados. O sistema tentou contornar isso, mas houve um problema.";
-      } else if (error.message) {
-        friendlyMessage = `Erro: ${error.message}`;
-      }
-      
-      alert(friendlyMessage);
+      alert("Erro: " + (error.message || "Desconhecido"));
     }
   };
 
@@ -274,22 +248,7 @@ export const Clients: React.FC = () => {
       if (countErr) throw countErr;
 
       if (count && count > 0) {
-        // Has sales: Inactivate
-        const { error: updateErr } = await supabase
-          .from('clients')
-          .update({ active: false })
-          .eq('id', id);
-        
-        if (updateErr) {
-            // Se falhar por falta da coluna 'active', o cliente continua lá mas não podemos inativar
-            if (updateErr.message?.includes("'active'")) {
-                alert("O cliente possui vendas e não pode ser removido. A função de inativação falhou porque a coluna 'active' não existe no seu banco de dados.");
-            } else {
-                throw updateErr;
-            }
-        } else {
-            alert("O cliente possui vendas vinculadas e foi inativado ao invés de excluído.");
-        }
+        alert("O cliente possui vendas vinculadas e não pode ser excluído para não quebrar o histórico financeiro.");
       } else {
         // No sales: Permanent Delete
         const { error: deleteErr } = await supabase
@@ -298,10 +257,7 @@ export const Clients: React.FC = () => {
           .eq('id', id);
         
         if (deleteErr) {
-           // Fallback to inactivation if delete fails for any reason (e.g. constraints not caught by count)
-           console.warn("Delete failed, attempting inactivation instead:", deleteErr);
-           await supabase.from('clients').update({ active: false }).eq('id', id);
-           alert("O cliente foi inativado.");
+            alert("Erro ao excluir: " + deleteErr.message);
         } else {
           alert("Cliente excluído com sucesso!");
         }
@@ -406,7 +362,7 @@ export const Clients: React.FC = () => {
       (c.cpf || '').includes(search) || 
       (c.phone || '').includes(search);
     
-    const matchesActive = showInactive ? true : (c.active !== false);
+    const matchesActive = true;
     
     return matchesSearch && matchesActive;
   });
@@ -488,7 +444,6 @@ export const Clients: React.FC = () => {
                     <td className="p-4 font-medium text-slate-800 dark:text-white">
                       <div className="flex items-center gap-2">
                         {capitalizeName(client.full_name)}
-                        {client.active === false && <span className="px-1.5 py-0.5 bg-slate-200 text-slate-600 text-[10px] rounded font-bold">INATIVO</span>}
                         {client.total_debt! > 0 && <span className="ml-2 px-1.5 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-600 text-[10px] rounded-full font-bold">EM DÉBITO</span>}
                       </div>
                     </td>
@@ -651,20 +606,7 @@ export const Clients: React.FC = () => {
                     </div>
                   </div>
 
-                  {!isReadOnly && (
-                    <div className="flex items-center gap-2 p-2 bg-slate-50 dark:bg-slate-900/50 rounded-lg border dark:border-slate-700">
-                      <input 
-                        type="checkbox"
-                        id="client-active"
-                        checked={formData.active}
-                        onChange={e => setFormData({...formData, active: e.target.checked})}
-                        className="w-5 h-5 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
-                      />
-                      <label htmlFor="client-active" className="text-sm font-bold text-slate-700 dark:text-slate-200 cursor-pointer">
-                        Cadastro Ativo
-                      </label>
-                    </div>
-                  )}
+
                 </div>
               ) : (
                 <div className="p-6">
