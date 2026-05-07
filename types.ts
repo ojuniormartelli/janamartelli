@@ -17,7 +17,6 @@ export interface Client {
   phone: string;
   email: string;
   address: string;
-  active?: boolean;
   created_at?: string;
   total_debt?: number; // Virtual field calculated in UI
 }

@@ -33,8 +33,7 @@ export const Clients: React.FC = () => {
     cpf: '',
     phone: '',
     email: '',
-    address: '',
-    active: true
+    address: ''
   });
 
   // Import State
@@ -137,14 +136,13 @@ export const Clients: React.FC = () => {
         cpf: client.cpf || '',
         phone: client.phone || '',
         email: client.email || '',
-        address: client.address || '',
-        active: client.active !== false
+        address: client.address || ''
       });
       fetchClientHistory(client.id);
     } else {
       setEditingClient(null);
       setIsReadOnly(false);
-      setFormData({ full_name: '', cpf: '', phone: '', email: '', address: '', active: true });
+      setFormData({ full_name: '', cpf: '', phone: '', email: '', address: '' });
       setClientHistory([]);
     }
     setIsModalOpen(true);
