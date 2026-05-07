@@ -3,7 +3,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { Product, ProductVariation, ProductSize } from '../types';
 import { ChevronDown, ChevronRight, Plus, AlertTriangle, Loader, Trash2, Edit2, X, Save, Search, Download, Layers, Settings as SettingsIcon, Package, PlusCircle, Upload, Combine, FileSpreadsheet, FileText } from 'lucide-react';
-import { formatCurrency, parseCurrencyString, capitalizeName } from '../utils/formatters';
+import { formatCurrency, parseCurrencyString, capitalizeName, getSizeWeight } from '../utils/formatters';
 import * as XLSX from 'xlsx';
 import { RomaneioImportModal } from '../components/RomaneioImportModal';
 
@@ -77,14 +77,12 @@ export const Inventory: React.FC = () => {
             )
         );
     }
-    return filtered.sort((a, b) => {
-        let valA = (a as any)[sortConfig.field]?.toString().toLowerCase() || '';
-        let valB = (b as any)[sortConfig.field]?.toString().toLowerCase() || '';
-        if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
-        if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
-        return 0;
-    });
-  }, [products, searchQuery, sortConfig]);
+
+    // Sort products by name A-Z
+    return [...filtered].sort((a, b) => 
+      a.nome.trim().localeCompare(b.nome.trim(), 'pt-BR', { sensitivity: 'base' })
+    );
+  }, [products, searchQuery]);
 
   // --- EXCEL LOGIC ---
   const handleExportExcel = () => {
@@ -366,118 +364,186 @@ export const Inventory: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <input type="file" accept=".xlsx, .xls" ref={fileInputRef} className="hidden" onChange={handleImportExcel} />
 
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
-        <div><h2 className="text-2xl font-bold text-slate-800 dark:text-white">Estoque</h2><p className="text-sm text-slate-500">Gestão centralizada por modelo</p></div>
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-3">
+        <div><h2 className="text-xl font-bold text-slate-800 dark:text-white">Estoque</h2><p className="text-[11px] text-slate-500">Gestão centralizada por modelo</p></div>
         
-        <div className="flex-1 max-w-md w-full relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-            <input type="text" placeholder="Buscar por Nome, Ref ou SKU..." className="w-full pl-10 pr-4 py-2 border rounded-lg dark:bg-slate-700 dark:text-white shadow-sm focus:ring-2 focus:ring-primary-500 outline-none" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+        <div className="flex-1 max-w-sm w-full relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+            <input type="text" placeholder="Buscar por Nome, Ref ou SKU..." className="w-full pl-9 pr-3 py-1.5 border rounded-lg dark:bg-slate-700 dark:text-white text-xs shadow-sm focus:ring-2 focus:ring-primary-500 outline-none" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
         </div>
 
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-1.5 flex-wrap">
           <button 
             onClick={handleMergeDuplicates} 
             disabled={isMerging || loading} 
-            className="px-4 py-2 bg-amber-50 text-amber-600 border border-amber-200 rounded-lg text-sm font-bold flex items-center hover:bg-amber-100 transition-colors shadow-sm disabled:opacity-50"
+            className="px-3 py-1.5 bg-amber-50 text-amber-600 border border-amber-200 rounded text-xs font-bold flex items-center hover:bg-amber-100 transition-colors disabled:opacity-50"
           >
-            {isMerging ? <Loader className="animate-spin mr-2" size={18}/> : <Combine size={18} className="mr-2"/>}
-            Mesclar Referências
+            {isMerging ? <Loader className="animate-spin mr-1" size={14}/> : <Combine size={14} className="mr-1"/>}
+            Mesclar
           </button>
           
-          <button onClick={handleExportExcel} className="px-4 py-2 bg-white dark:bg-slate-800 border rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-50 transition-colors shadow-sm flex items-center font-bold text-sm">
-            <Download size={18} className="mr-2"/> Exportar Excel
+          <button onClick={handleExportExcel} className="px-3 py-1.5 bg-white dark:bg-slate-800 border rounded text-slate-600 dark:text-slate-300 hover:bg-slate-50 text-xs flex items-center font-bold">
+            <Download size={14} className="mr-1"/> Exportar
           </button>
 
           <button 
             onClick={() => fileInputRef.current?.click()} 
             disabled={importing}
-            className="px-4 py-2 bg-white dark:bg-slate-800 border rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-50 transition-colors shadow-sm flex items-center font-bold text-sm"
+            className="px-3 py-1.5 bg-white dark:bg-slate-800 border rounded text-slate-600 dark:text-slate-300 hover:bg-slate-50 text-xs flex items-center font-bold"
           >
-            {importing ? <Loader className="animate-spin mr-2" size={18}/> : <FileSpreadsheet size={18} className="mr-2"/>}
-            Importar Excel
+            {importing ? <Loader className="animate-spin mr-1" size={14}/> : <FileSpreadsheet size={14} className="mr-1"/>}
+            Importar
           </button>
 
           <button 
             onClick={() => setIsRomaneioModalOpen(true)}
-            className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-bold shadow-md hover:bg-purple-700 transition-colors flex items-center"
+            className="px-3 py-1.5 bg-purple-600 text-white rounded text-xs font-bold shadow hover:bg-purple-700 flex items-center"
           >
-            <FileText size={18} className="mr-2"/> Importar Romaneio PDF
+            <FileText size={14} className="mr-1"/> Romaneio PDF
           </button>
 
-          <button onClick={() => setIsNewProductModalOpen(true)} className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-bold shadow-md hover:bg-primary-700 transition-colors flex items-center">
-            <Plus size={18} className="mr-1"/> Novo Produto
+          <button onClick={() => setIsNewProductModalOpen(true)} className="px-3 py-1.5 bg-primary-600 text-white rounded text-xs font-bold shadow hover:bg-primary-700 flex items-center">
+            <Plus size={14} className="mr-1"/> Novo Item
           </button>
         </div>
       </div>
 
-      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg overflow-hidden border dark:border-slate-700">
+      <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm overflow-hidden border dark:border-slate-700">
         <div className="overflow-x-auto">
             <table className="w-full text-left">
-            <thead className="bg-slate-50 dark:bg-slate-700 text-slate-500 dark:text-slate-300 text-xs uppercase font-bold">
-                <tr><th className="p-4 w-10"></th><th className="p-4">Referência</th><th className="p-4">Nome</th><th className="p-4">Categoria</th><th className="p-4 text-right">Estoque</th><th className="p-4 text-center">Ações</th></tr>
+                <thead className="bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 text-[10px] uppercase font-bold sticky top-0 z-10">
+                <tr>
+                    <th className="p-1.5 pl-3">Item / Var. / Tamanho</th>
+                    <th className="p-1.5">SKU</th>
+                    <th className="p-1.5 text-right">Custo</th>
+                    <th className="p-1.5 text-right">Venda</th>
+                    <th className="p-1.5 text-center">Saldo</th>
+                    <th className="p-1.5 text-right pr-3">Ações</th>
+                </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                 {loading && products.length === 0 ? (
-                    <tr><td colSpan={6} className="p-12 text-center"><Loader className="animate-spin mx-auto text-primary-500" size={32} /></td></tr>
+                    <tr><td colSpan={6} className="p-8 text-center"><Loader className="animate-spin mx-auto text-primary-500" size={24} /></td></tr>
                 ) : processedProducts.length === 0 ? (
-                    <tr><td colSpan={6} className="p-12 text-center text-slate-500">Nenhum produto encontrado.</td></tr>
-                ) : processedProducts.map(product => (
-                    <React.Fragment key={product.id}>
-                        <tr 
-                          onClick={() => setExpandedRow(expandedRow === product.id ? null : product.id)}
-                          className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer group"
-                        >
-                            <td className="p-4">{expandedRow === product.id ? <ChevronDown size={18} className="text-primary-500" /> : <ChevronRight size={18} />}</td>
-                            <td className="p-4 font-mono text-sm font-bold text-slate-700 dark:text-slate-200">{product.modelo}</td>
-                            <td className="p-4 font-bold dark:text-white">{capitalizeName(product.nome)}</td>
-                            <td className="p-4"><span className="px-2 py-1 bg-slate-100 dark:bg-slate-900 rounded-lg text-[10px] font-bold">{capitalizeName(product.categoria)}</span></td>
-                            <td className="p-4 text-right">
-                                <span className={`font-bold ${product.variations?.reduce((acc, v) => acc + v.quantity, 0) || 0 > 0 ? 'text-primary-600' : 'text-red-500'}`}>
-                                    {product.variations?.reduce((acc, v) => acc + v.quantity, 0) || 0} un
-                                </span>
-                            </td>
-                            <td className="p-4 text-right" onClick={(e) => e.stopPropagation()}>
-                                <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button onClick={() => setEditingProduct(product)} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg"><Edit2 size={16}/></button>
-                                    <button onClick={() => openAddVariantModal(product.id)} className="bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300 px-3 py-1 text-[10px] rounded-lg font-bold hover:bg-primary-100 transition-colors uppercase">Variante</button>
-                                    <button onClick={() => handleDeleteProduct(product.id)} className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg"><Trash2 size={16}/></button>
-                                </div>
-                            </td>
-                        </tr>
-                        {expandedRow === product.id && (
-                        <tr>
-                            <td colSpan={6} className="bg-slate-50 dark:bg-slate-900/30 p-4 border-t border-slate-100 dark:border-slate-700">
-                                <table className="w-full text-sm bg-white dark:bg-slate-800 rounded-xl shadow-sm overflow-hidden border dark:border-slate-700">
-                                    <thead className="bg-slate-100 dark:bg-slate-700/50 text-slate-500 font-bold uppercase text-[10px]"><tr className="border-b dark:border-slate-700"><th className="p-3 text-left">Modelo/Cor</th><th className="p-3">Tam</th><th className="p-3">SKU</th><th className="p-3 text-right">Custo</th><th className="p-3 text-right">Venda</th><th className="p-3 text-right">Qtd</th><th className="p-3 text-center">Ações</th></tr></thead>
-                                    <tbody className="divide-y dark:divide-slate-700">
-                                        {product.variations?.map(v => (
-                                        <tr key={v.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30">
-                                            <td className="p-3 font-medium dark:text-white text-[11px]">{capitalizeName(v.model_variant)}</td>
-                                            <td className="p-3 font-bold text-primary-600 uppercase">{v.size}</td>
-                                            <td className="p-3 font-mono text-xs text-slate-400">{v.sku}</td>
-                                            <td className="p-3 text-right text-slate-400">{formatCurrency(v.price_cost)}</td>
-                                            <td className="p-3 text-right font-bold dark:text-white">{formatCurrency(v.price_sale)}</td>
-                                            <td className="p-3 text-right">
-                                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${v.quantity <= 0 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{v.quantity} un</span>
-                                            </td>
-                                            <td className="p-3 text-center">
-                                                <div className="flex justify-center gap-1">
-                                                    <button onClick={() => { setRestockVariation({ id: v.id, name: `${product.nome} - ${v.size}`, current: v.quantity, add: 0 }); setIsRestockModalOpen(true); }} className="p-1.5 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-lg"><PlusCircle size={16}/></button>
-                                                    <button onClick={() => setEditingVariation(v)} className="p-1.5 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg"><Edit2 size={16}/></button>
-                                                    <button onClick={() => handleDeleteVariation(v.id)} className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg"><Trash2 size={16}/></button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ))}</tbody>
-                                </table>
-                            </td>
-                        </tr>
-                        )}
-                    </React.Fragment>
-                ))}
+                    <tr><td colSpan={6} className="p-8 text-center text-slate-500 text-xs">Nenhum produto encontrado.</td></tr>
+                ) : (
+                    processedProducts.map(product => {
+                        // Grouping variations by model
+                        const variationsByModel: Record<string, ProductVariation[]> = {};
+                        (product.variations || []).forEach(v => {
+                            const key = v.model_variant?.trim() || 'Padrão';
+                            if (!variationsByModel[key]) variationsByModel[key] = [];
+                            variationsByModel[key].push(v);
+                        });
+
+                        const sortedModels = Object.keys(variationsByModel).sort((a, b) => 
+                          a.trim().localeCompare(b.trim(), 'pt-BR', { sensitivity: 'base' })
+                        );
+                        const totalStock = (product.variations || []).reduce((acc, v) => acc + v.quantity, 0);
+
+                        return (
+                            <React.Fragment key={product.id}>
+                                {/* Product Header Row */}
+                                <tr className="bg-slate-50/50 dark:bg-slate-900/30 border-b dark:border-slate-700">
+                                    <td colSpan={6} className="p-1.5 px-3">
+                                        <div className="flex items-center gap-2">
+                                            <Package size={12} className="text-primary-500" />
+                                            <span className="font-bold text-slate-800 dark:text-white text-xs uppercase tracking-tight">
+                                                {capitalizeName(product.nome)}
+                                            </span>
+                                            {product.modelo && (
+                                                <span className="text-[9px] font-mono text-slate-400 bg-slate-100 dark:bg-slate-800 px-1 rounded">
+                                                    #{product.modelo}
+                                                </span>
+                                            )}
+                                            <span className="text-[8px] uppercase font-bold text-slate-400 ml-1">
+                                                {capitalizeName(product.categoria)}
+                                            </span>
+                                            <span className={`text-[9px] font-bold ml-2 ${totalStock <= 0 ? 'text-red-500' : 'text-slate-400'}`}>
+                                                Sum: {totalStock}
+                                            </span>
+                                            <div className="ml-auto flex gap-1">
+                                                <button onClick={() => setEditingProduct(product)} className="text-blue-600 hover:bg-blue-50 p-0.5 rounded" title="Editar"><Edit2 size={10}/></button>
+                                                <button onClick={() => openAddVariantModal(product.id)} className="text-primary-600 hover:bg-primary-50 p-0.5 rounded" title="Add Variação"><PlusCircle size={10}/></button>
+                                                <button onClick={() => handleDeleteProduct(product.id)} className="text-red-600 hover:bg-red-50 p-0.5 rounded" title="Excluir"><Trash2 size={10}/></button>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+
+                                {sortedModels.map(model => {
+                                    const variations = variationsByModel[model].sort((a, b) => getSizeWeight(a.size, sizes) - getSizeWeight(b.size, sizes));
+                                    
+                                    return (
+                                        <React.Fragment key={`${product.id}-${model}`}>
+                                            {/* Model Row Header */}
+                                            <tr className="bg-white dark:bg-slate-800/10 border-l-2 border-primary-500">
+                                                <td colSpan={6} className="px-5 py-0.5 text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-tight bg-slate-50/20">
+                                                    Var: <span className="text-primary-600 dark:text-primary-400">{capitalizeName(model)}</span>
+                                                </td>
+                                            </tr>
+
+                                            {/* Variation Rows */}
+                                            {variations.map(v => (
+                                                <tr key={v.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors border-l-2 border-slate-200 dark:border-slate-700">
+                                                    <td className="p-1 px-3 pl-8">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="w-5 h-5 rounded bg-slate-50 dark:bg-slate-700 flex items-center justify-center font-bold text-slate-600 dark:text-slate-300 text-[10px] border border-slate-100 dark:border-slate-600">
+                                                                {v.size}
+                                                            </div>
+                                                            <span className="text-[10px] text-slate-400">T{v.size}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="p-1 font-mono text-[9px] text-slate-400">{v.sku || '-'}</td>
+                                                    <td className="p-1 text-right text-slate-400 text-[10px]">{formatCurrency(v.price_cost)}</td>
+                                                    <td className="p-1 text-right font-bold dark:text-white text-[10px]">{formatCurrency(v.price_sale)}</td>
+                                                    <td className="p-1 text-center">
+                                                        <span className={`inline-flex items-center px-1.5 py-0 rounded text-[9px] font-bold ${
+                                                            v.quantity <= 0 
+                                                            ? 'text-red-500' 
+                                                            : v.quantity <= 2
+                                                            ? 'text-amber-500'
+                                                            : 'text-green-600'
+                                                        }`}>
+                                                            {v.quantity} un
+                                                        </span>
+                                                    </td>
+                                                    <td className="p-1 text-right pr-3">
+                                                        <div className="flex justify-end gap-1">
+                                                            <button 
+                                                                onClick={() => { setRestockVariation({ id: v.id, name: `${product.nome} - ${v.model_variant} (${v.size})`, current: v.quantity, add: 0 }); setIsRestockModalOpen(true); }} 
+                                                                className="p-1 text-green-600 hover:bg-green-50 rounded"
+                                                                title="Entrada"
+                                                            >
+                                                                <PlusCircle size={12}/></button>
+                                                            <button 
+                                                                onClick={() => setEditingVariation(v)} 
+                                                                className="p-1 text-blue-500 hover:bg-blue-50 rounded"
+                                                                title="Editar"
+                                                            >
+                                                                <Edit2 size={12}/>
+                                                            </button>
+                                                            <button 
+                                                                onClick={() => handleDeleteVariation(v.id)} 
+                                                                className="p-1 text-red-500 hover:bg-red-50 rounded"
+                                                                title="Excluir"
+                                                            >
+                                                                <Trash2 size={12}/>
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </React.Fragment>
+                                    );
+                                })}
+                            </React.Fragment>
+                        );
+                    })
+                )}
             </tbody></table>
         </div>
       </div>

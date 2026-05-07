@@ -69,3 +69,16 @@ export const getLocalDate = (date?: Date) => {
   const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 };
+
+export const getSizeWeight = (sizeName: string, dynamicSizes?: { name: string, sort_order: number }[]) => {
+    if (dynamicSizes) {
+        const found = dynamicSizes.find(s => s.name.toUpperCase() === sizeName.toUpperCase());
+        if (found) return found.sort_order;
+    }
+
+    const weights: Record<string, number> = {
+        'RN': 0, 'PB': 1, 'PP': 2, 'P': 3, 'M': 4, 'G': 5, 'GG': 6, 'XG': 7, 'XXG': 8, 'U': 9,
+        '1': 10, '2': 11, '3': 12, '4': 13, '6': 14, '8': 15, '10': 16, '12': 17, '14': 18, '16': 19
+    };
+    return weights[sizeName.toUpperCase()] !== undefined ? weights[sizeName.toUpperCase()] : 999;
+};

@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { Product, CartItem, Client, ProductVariation, PaymentMethod, ProductSize } from '../types';
 import { Search, ShoppingBag, Trash, UserPlus, CheckCircle, X, Save, User, Mail, MapPin, AlertCircle, Tag, TrendingDown, DollarSign, Percent, ScanBarcode, Clock, CreditCard, ClipboardList } from 'lucide-react';
-import { formatCurrency, maskCPF, maskPhone, getLocalDate, capitalizeName } from '../utils/formatters';
+import { formatCurrency, maskCPF, maskPhone, getLocalDate, capitalizeName, getSizeWeight } from '../utils/formatters';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -33,6 +33,8 @@ export const POS: React.FC = () => {
   // Modals
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isNewClientModalOpen, setIsNewClientModalOpen] = useState(false);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [selectedVariation, setSelectedVariation] = useState<{ product: Product, variation: ProductVariation } | null>(null);
   const [newClientData, setNewClientData] = useState({ full_name: '', cpf: '', phone: '', email: '', address: '' });
   
   // Discount Modal State (Item level)
@@ -146,20 +148,6 @@ export const POS: React.FC = () => {
     if (sizeData) setSizes(sizeData);
   };
 
-  // Função dinâmica para pegar o peso do tamanho
-  const getSizeWeight = (sizeName: string) => {
-    // Tenta encontrar no banco primeiro
-    const found = sizes.find(s => s.name.toUpperCase() === sizeName.toUpperCase());
-    if (found) return found.sort_order;
-    
-    // Fallback se o banco ainda não estiver populado ou carregado
-    const weights: Record<string, number> = {
-        'RN': 0, 'PB': 1, 'PP': 2, 'P': 3, 'M': 4, 'G': 5, 'GG': 6, 'XG': 7, 'XXG': 8, 'U': 9,
-        '1': 10, '2': 11, '3': 12, '4': 13, '6': 14, '8': 15, '10': 16, '12': 17, '14': 18, '16': 19
-    };
-    return weights[sizeName.toUpperCase()] !== undefined ? weights[sizeName.toUpperCase()] : 999;
-  };
-
   useEffect(() => {
       if (location.state?.conversionSale) {
           const sale = location.state.conversionSale;
@@ -187,18 +175,24 @@ export const POS: React.FC = () => {
   const addToCart = (product: Product, variation: ProductVariation) => {
     setCart(prev => {
       const existingIndex = prev.findIndex(item => item.variation.id === variation.id);
+      let newQty = 1;
       if (existingIndex >= 0) {
-        const existing = prev[existingIndex];
-        if (existing.quantity >= variation.quantity) {
-            alert("Estoque insuficiente!");
-            return prev;
-        }
+        newQty = prev[existingIndex].quantity + 1;
+      }
+      
+      if (newQty > variation.quantity) {
+          alert("Estoque insuficiente!");
+          return prev;
+      }
+
+      if (existingIndex >= 0) {
         const newCart = [...prev];
-        newCart[existingIndex] = { ...existing, quantity: existing.quantity + 1 };
+        newCart[existingIndex] = { ...newCart[existingIndex], quantity: newQty };
         return newCart;
       }
       return [...prev, { product, variation, quantity: 1 }];
     });
+    setIsDetailModalOpen(false);
   };
 
   const removeFromCart = (index: number) => {
@@ -391,17 +385,23 @@ export const POS: React.FC = () => {
     )
   );
 
+  const sortedProducts = React.useMemo(() => {
+    return [...filteredProducts].sort((a, b) => 
+      a.nome.trim().localeCompare(b.nome.trim(), 'pt-BR', { sensitivity: 'base' })
+    );
+  }, [filteredProducts]);
+
   return (
-    <div className="flex h-[calc(100vh-6rem)] gap-4">
+    <div className="flex h-[calc(100vh-6rem)] gap-3 p-2">
       {/* Catálogo de Produtos */}
-      <div className="flex-1 flex flex-col bg-white dark:bg-slate-800 rounded-lg shadow overflow-hidden">
-        <div className="p-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+      <div className="flex-1 flex flex-col bg-white dark:bg-slate-800 rounded-lg shadow-sm border dark:border-slate-700 overflow-hidden">
+        <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
           <div className="relative flex items-center gap-2">
             <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                 <input 
-                className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 dark:text-white"
-                placeholder="Buscar por nome ou bipar código (SKU)..."
+                className="w-full pl-9 pr-3 py-1.5 bg-white dark:bg-slate-700 rounded-md border border-slate-200 dark:border-slate-600 dark:text-white text-sm"
+                placeholder="Buscar ou bipar SKU..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 onKeyDown={(e) => {
@@ -410,61 +410,79 @@ export const POS: React.FC = () => {
                 autoFocus
                 />
             </div>
-            <div className="p-2 bg-slate-200 dark:bg-slate-700 rounded text-slate-500 dark:text-slate-400" title="Leitor de Código de Barras Ativo">
-                <ScanBarcode size={20} />
+            <div className="p-1.5 bg-slate-200 dark:bg-slate-700 rounded text-slate-500" title="Leitor Ativo">
+                <ScanBarcode size={16} />
             </div>
           </div>
         </div>
         
-        <div className="flex-1 overflow-y-auto p-4 bg-slate-100 dark:bg-slate-900/20">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
-                {filteredProducts.map(product => {
-                    if (!product.variations) return null;
-                    const variationsByModel: Record<string, ProductVariation[]> = {};
-                    product.variations.forEach(v => {
-                        const key = v.model_variant || 'Padrão';
-                        if (!variationsByModel[key]) variationsByModel[key] = [];
-                        variationsByModel[key].push(v);
-                    });
+        <div className="flex-1 overflow-y-auto p-2 bg-slate-100 dark:bg-slate-900/40 space-y-2">
+            {sortedProducts.map(product => {
+                if (!product.variations) return null;
+                const variationsByModel: Record<string, ProductVariation[]> = {};
+                product.variations.forEach(v => {
+                    const key = v.model_variant?.trim() || 'Padrão';
+                    if (!variationsByModel[key]) variationsByModel[key] = [];
+                    variationsByModel[key].push(v);
+                });
 
-                    return (
-                        <div key={product.id} className="bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-700 hover:shadow-lg transition-all flex flex-col overflow-hidden">
-                            <div className="p-3 bg-white dark:bg-slate-800 border-b border-slate-100 dark:border-slate-600">
-                                <h3 className="font-bold text-slate-800 dark:text-white leading-tight">{capitalizeName(product.nome)}</h3>
-                                <p className="text-xs text-slate-500">{capitalizeName(product.categoria)}</p>
-                            </div>
-                            <div className="flex-1 overflow-y-auto max-h-60 p-3 space-y-4">
-                                {Object.keys(variationsByModel).sort().map(model => {
-                                    const variantRef = variationsByModel[model][0]?.reference || product.modelo;
-                                    return (
-                                        <div key={model} className="space-y-2">
-                                            <div className="border-b border-slate-200 dark:border-slate-600 pb-1">
-                                                <span className="text-xs font-bold text-slate-600 dark:text-slate-300 block">{capitalizeName(model)}</span>
-                                                {variantRef && <span className="text-[10px] text-slate-400 font-mono bg-slate-100 dark:bg-slate-700/50 px-1 rounded inline-block mt-0.5">Ref: {variantRef}</span>}
-                                            </div>
-                                            <div className="flex flex-wrap gap-2">
-                                                {variationsByModel[model].sort((a,b) => getSizeWeight(a.size) - getSizeWeight(b.size)).map(v => (
-                                                    <button 
-                                                        key={v.id} 
-                                                        onClick={() => addToCart(product, v)} 
-                                                        className="flex flex-col items-center justify-center bg-white dark:bg-slate-600 border border-slate-200 dark:border-slate-500 rounded p-1 min-w-[3.5rem] min-h-[3.5rem] hover:border-primary-500 shadow-sm transition-all"
-                                                    >
-                                                        <div className="flex items-center gap-1">
-                                                            <span className="font-bold text-sm text-slate-800 dark:text-white">{v.size}</span>
-                                                            <span className={`text-[10px] font-medium ${v.quantity < 2 ? 'text-red-500' : 'text-slate-400'}`}>({v.quantity})</span>
-                                                        </div>
-                                                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">{formatCurrency(v.price_sale)}</span>
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    );
-                                })}
+                const sortedModels = Object.keys(variationsByModel).sort((a, b) => 
+                  a.trim().localeCompare(b.trim(), 'pt-BR', { sensitivity: 'base' })
+                );
+
+                return (
+                    <div key={product.id} className="bg-white dark:bg-slate-800 rounded-md shadow-sm border dark:border-slate-700 overflow-hidden">
+                        <div className="px-2 py-1 bg-slate-50 dark:bg-slate-900/50 border-b dark:border-slate-700 flex items-center gap-2">
+                            <h3 className="font-bold text-slate-800 dark:text-white text-xs uppercase tracking-tight">{capitalizeName(product.nome)}</h3>
+                            <div className="flex gap-1.5 items-center">
+                                <span className="text-[8px] uppercase font-bold text-slate-400">
+                                    {capitalizeName(product.categoria)}
+                                </span>
+                                {product.modelo && (
+                                    <span className="text-[8px] font-mono text-slate-400">({product.modelo})</span>
+                                )}
                             </div>
                         </div>
-                    );
-                })}
-            </div>
+                        <div className="p-1 px-2 divide-y divide-slate-50 dark:divide-slate-700/50">
+                            {sortedModels.map(model => {
+                                const modelVariations = variationsByModel[model].sort((a,b) => getSizeWeight(a.size, sizes) - getSizeWeight(b.size, sizes));
+                                return (
+                                    <div key={model} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5">
+                                        <div className="flex items-center gap-1.5 min-w-[100px] max-w-[150px]">
+                                            <div className="w-0.5 h-2.5 bg-primary-500 rounded-full"></div>
+                                            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase truncate" title={model}>{capitalizeName(model)}</span>
+                                        </div>
+                                        <div className="flex flex-wrap gap-1">
+                                            {modelVariations.map(v => (
+                                                <button 
+                                                    key={v.id} 
+                                                    onClick={() => { setSelectedVariation({ product, variation: v }); setIsDetailModalOpen(true); }} 
+                                                    className={`group relative flex items-center gap-1 px-1.5 py-0.5 rounded border transition-all active:scale-95 ${
+                                                        v.quantity <= 0 
+                                                        ? 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 opacity-40 cursor-not-allowed' 
+                                                        : 'bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 hover:border-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/10'
+                                                    }`}
+                                                    disabled={v.quantity <= 0}
+                                                >
+                                                    <span className="font-black text-[10px] text-slate-800 dark:text-white">{v.size}</span>
+                                                    <span className={`text-[8px] font-bold px-0.5 rounded-sm ${
+                                                        v.quantity <= 2 ? 'text-red-600' : 'text-slate-400'
+                                                    }`}>
+                                                        {v.quantity}
+                                                    </span>
+                                                    <span className="text-[9px] font-bold text-primary-600 dark:text-primary-400 border-l border-slate-100 dark:border-slate-600 pl-1 leading-none">
+                                                        {formatCurrency(v.price_sale)}
+                                                    </span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                );
+            })}
         </div>
       </div>
 
@@ -526,6 +544,57 @@ export const POS: React.FC = () => {
             </div>
         </div>
       </div>
+
+      {selectedVariation && isDetailModalOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border dark:border-slate-700">
+                <div className="p-4 border-b dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex justify-between items-center">
+                    <h3 className="font-bold dark:text-white">Detalhes do Item</h3>
+                    <button onClick={() => setIsDetailModalOpen(false)} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors"><X size={20}/></button>
+                </div>
+                <div className="p-6 space-y-4">
+                    <div className="text-center">
+                        <div className="w-16 h-16 bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 rounded-2xl flex items-center justify-center mx-auto mb-3 font-black text-2xl border-2 border-primary-200 dark:border-primary-800">
+                            {selectedVariation.variation.size}
+                        </div>
+                        <h4 className="text-xl font-bold dark:text-white leading-tight">{capitalizeName(selectedVariation.product.nome)}</h4>
+                        <p className="text-sm text-slate-500 font-medium uppercase mt-1">{capitalizeName(selectedVariation.variation.model_variant)}</p>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4 pt-2">
+                        <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl border dark:border-slate-700">
+                            <span className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Preço</span>
+                            <span className="text-lg font-black text-primary-600 dark:text-primary-400">{formatCurrency(selectedVariation.variation.price_sale)}</span>
+                        </div>
+                        <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl border dark:border-slate-700">
+                            <span className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Estoque</span>
+                            <span className={`text-lg font-black ${selectedVariation.variation.quantity <= 2 ? 'text-red-500' : 'text-slate-700 dark:text-slate-200'}`}>{selectedVariation.variation.quantity} un</span>
+                        </div>
+                    </div>
+
+                    <div className="space-y-2">
+                        <div className="flex justify-between text-xs py-2 border-b dark:border-slate-700">
+                            <span className="text-slate-400 font-medium">SKU</span>
+                            <span className="font-mono font-bold dark:text-slate-300">{selectedVariation.variation.sku || '-'}</span>
+                        </div>
+                        <div className="flex justify-between text-xs py-2 border-b dark:border-slate-700">
+                            <span className="text-slate-400 font-medium">Categoria</span>
+                            <span className="font-bold dark:text-slate-300">{capitalizeName(selectedVariation.product.categoria)}</span>
+                        </div>
+                    </div>
+
+                    <button 
+                        onClick={() => addToCart(selectedVariation.product, selectedVariation.variation)}
+                        className="w-full py-4 bg-primary-600 text-white rounded-xl font-black text-lg shadow-lg shadow-primary-500/30 hover:bg-primary-700 transition-all flex items-center justify-center gap-2"
+                    >
+                        <ShoppingBag size={20} />
+                        Adicionar ao Carrinho
+                    </button>
+                    <button onClick={() => setIsDetailModalOpen(false)} className="w-full py-3 text-slate-500 font-bold text-sm">Talvez depois</button>
+                </div>
+            </div>
+        </div>
+      )}
 
       {isNewClientModalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
