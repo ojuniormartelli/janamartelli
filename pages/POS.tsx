@@ -236,10 +236,19 @@ export const POS: React.FC = () => {
   const finalTotal = Math.max(0, subTotalWithInterest - calculatedDiscountValue);
 
   const handleOpenPayment = (type: 'sale' | 'quote') => {
+      // Regra: Venda Condicional ou Venda a Prazo (Fiado) EXIGEM cliente.
+      // Venda à vista (Dinheiro/Pix/Cartão) não exige.
       if (!selectedClient) {
-          alert("Por favor, selecione um cliente antes de finalizar.");
-          return;
+          if (type === 'quote') {
+              alert("Por favor, selecione um cliente para gerar um Condicional/Consignado.");
+              return;
+          }
+          if (isPendingSale) {
+              alert("Vendas a Prazo (Fiado/A Receber) exigem um cliente identificado.");
+              return;
+          }
       }
+      
       setTransactionType(type);
       setDiscountVal('');
       setDiscountType('money');
@@ -269,6 +278,59 @@ export const POS: React.FC = () => {
   };
 
   const finalizeTransaction = async () => {
+    let clientId = selectedClient;
+
+    // Se não houver cliente selecionado, tenta encontrar ou criar o "Consumidor Final"
+    if (!clientId) {
+        try {
+            const { data: existingDefault } = await supabase
+                .from('clients')
+                .select('id')
+                .eq('full_name', 'Consumidor Final')
+                .maybeSingle();
+
+            if (existingDefault) {
+                clientId = existingDefault.id;
+            } else {
+                // Cria o cliente Consumidor Final
+                const newClient = {
+                    full_name: 'Consumidor Final',
+                    cpf: '000.000.000-00',
+                    phone: '',
+                    email: 'consumidor@final.com',
+                    address: 'Venda de Balcão'
+                };
+                
+                // Tenta com active: true primeiro
+                let { data: created, error: createError } = await supabase
+                    .from('clients')
+                    .insert({ ...newClient, active: true })
+                    .select()
+                    .single();
+                
+                if (createError && (createError.message?.includes("'active'") || createError.details?.includes("'active'"))) {
+                    // Tenta sem active
+                    const { data: retryCreated, error: retryError } = await supabase
+                        .from('clients')
+                        .insert(newClient)
+                        .select()
+                        .single();
+                    if (retryError) throw retryError;
+                    created = retryCreated;
+                } else if (createError) {
+                    throw createError;
+                }
+
+                clientId = created?.id || '';
+            }
+        } catch (err) {
+            console.error("Erro ao tratar cliente Consumidor Final:", err);
+            // Se falhar a criação do cliente, tenta passar null se o banco permitir, ou aborta
+            // Para segurança, vamos tentar prosseguir com null
+            clientId = '';
+        }
+    }
+
     const prefix = transactionType === 'sale' ? 'V' : 'C';
     const { data: code } = await supabase.rpc('get_next_code', { prefix });
 
@@ -285,7 +347,7 @@ export const POS: React.FC = () => {
 
     const { data: sale, error } = await supabase.from('vendas').insert({
         code: code, 
-        client_id: selectedClient,
+        client_id: clientId || null,
         user_id: user?.id || '00000000-0000-0000-0000-000000000000',
         total_value: finalTotal,
         payment_method: finalMethodName,
@@ -363,8 +425,18 @@ export const POS: React.FC = () => {
               full_name: capitalizeName(newClientData.full_name.trim()),
               email: newClientData.email.trim().toLowerCase()
           };
-          const { data, error } = await supabase.from('clients').insert([payload]).select().single();
-          if (error) throw error;
+          
+          let { data, error } = await supabase.from('clients').insert([{ ...payload, active: true }]).select().single();
+          
+          if (error && (error.message?.includes("'active'") || error.details?.includes("'active'"))) {
+              // Tenta sem active
+              const { data: retryData, error: retryError } = await supabase.from('clients').insert([payload]).select().single();
+              if (retryError) throw retryError;
+              data = retryData;
+          } else if (error) {
+              throw error;
+          }
+
           if (data) {
               setClients(prev => [...prev, data].sort((a,b) => a.full_name.localeCompare(b.full_name)));
               setSelectedClient(data.id);
@@ -518,11 +590,11 @@ export const POS: React.FC = () => {
                 <div className="relative flex-1">
                     <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                     <select 
-                        className={`w-full pl-9 p-2 text-sm rounded border ${!selectedClient ? 'border-red-300 bg-red-50' : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700'} dark:text-white`}
+                        className={`w-full pl-9 p-2 text-sm rounded border ${!selectedClient ? 'border-amber-300 bg-amber-50' : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700'} dark:text-white`}
                         value={selectedClient}
                         onChange={e => setSelectedClient(e.target.value)}
                     >
-                        <option value="">Selecione um Cliente *</option>
+                        <option value="">{isPendingSale || transactionType === 'quote' ? 'Selecione um Cliente *' : 'Consumidor Final (Venda Balcão)'}</option>
                         {clients.map(c => <option key={c.id} value={c.id}>{capitalizeName(c.full_name)}</option>)}
                     </select>
                 </div>

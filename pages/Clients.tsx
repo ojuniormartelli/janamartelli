@@ -216,16 +216,44 @@ export const Clients: React.FC = () => {
     try {
       if (editingClient) {
         const { error } = await supabase.from('clients').update(payload).eq('id', editingClient.id);
-        if (error) throw error;
+        
+        if (error) {
+          // Se o erro for a falta da coluna 'active', tenta novamente sem ela
+          if (error.message?.includes("'active'") || error.details?.includes("'active'")) {
+            const { active, ...noActivePayload } = payload as any;
+            const { error: retryError } = await supabase.from('clients').update(noActivePayload).eq('id', editingClient.id);
+            if (retryError) throw retryError;
+          } else {
+            throw error;
+          }
+        }
       } else {
+        // Para novos clientes, tenta com active: true primeiro
         const { error } = await supabase.from('clients').insert({ ...payload, active: true });
-        if (error) throw error;
+        
+        if (error) {
+          // Se falhar por causa da coluna 'active', tenta sem ela
+          if (error.message?.includes("'active'") || error.details?.includes("'active'")) {
+            const { error: retryError } = await supabase.from('clients').insert(payload);
+            if (retryError) throw retryError;
+          } else {
+            throw error;
+          }
+        }
       }
       setIsModalOpen(false);
       fetchClients();
     } catch (error: any) {
       console.error("Erro ao salvar cliente:", error);
-      alert("Erro ao salvar cliente: " + (error.message || "Desconhecido"));
+      
+      let friendlyMessage = "Erro ao salvar cliente.";
+      if (error.message?.includes("'active'")) {
+        friendlyMessage = "A coluna 'active' não foi encontrada no banco de dados. O sistema tentou contornar isso, mas houve um problema.";
+      } else if (error.message) {
+        friendlyMessage = `Erro: ${error.message}`;
+      }
+      
+      alert(friendlyMessage);
     }
   };
 
@@ -252,8 +280,16 @@ export const Clients: React.FC = () => {
           .update({ active: false })
           .eq('id', id);
         
-        if (updateErr) throw updateErr;
-        alert("O cliente possui vendas vinculadas e foi inativado ao invés de excluído.");
+        if (updateErr) {
+            // Se falhar por falta da coluna 'active', o cliente continua lá mas não podemos inativar
+            if (updateErr.message?.includes("'active'")) {
+                alert("O cliente possui vendas e não pode ser removido. A função de inativação falhou porque a coluna 'active' não existe no seu banco de dados.");
+            } else {
+                throw updateErr;
+            }
+        } else {
+            alert("O cliente possui vendas vinculadas e foi inativado ao invés de excluído.");
+        }
       } else {
         // No sales: Permanent Delete
         const { error: deleteErr } = await supabase
