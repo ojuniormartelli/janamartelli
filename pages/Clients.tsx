@@ -66,7 +66,7 @@ export const Clients: React.FC = () => {
         try {
           const { data, error: sErr } = await supabase
               .from('vendas')
-              .select('client_id, total_value, venda_pagamentos(amount)')
+              .select('client_id, total_value, status_label, payment_status, venda_pagamentos(amount)')
               .not('client_id', 'is', null);
           
           if (!sErr && data) {
@@ -81,6 +81,12 @@ export const Clients: React.FC = () => {
         const processed = (clientsData || []).map(client => {
             const clientSales = (salesData || []).filter(s => s.client_id === client.id);
             const debt = clientSales.reduce((acc, sale) => {
+                // Ignore sales that are converted, returned or losses
+                const status = (sale.status_label || '').trim();
+                if (status === 'Convertida' || status === 'Devolução' || status === 'Baixa' || status === 'Perda') {
+                    return acc;
+                }
+                
                 const paid = (sale.venda_pagamentos as any[] || []).reduce((sum, p) => sum + Number(p.amount), 0);
                 return acc + (Number(sale.total_value) - paid);
             }, 0);
@@ -637,28 +643,37 @@ export const Clients: React.FC = () => {
                     ) : (
                       <div className="space-y-3">
                         {clientHistory.map(sale => {
-                          const remaining = Number(sale.total_value) - (sale.paid_amount || 0);
+                          const status = (sale.status_label || '').trim();
+                          const isClosed = status === 'Convertida' || status === 'Devolução' || status === 'Baixa' || status === 'Perda';
+                          const remaining = isClosed ? 0 : Number(sale.total_value) - (sale.paid_amount || 0);
+                          
                           return (
                             <div 
                               key={sale.id} 
                               onClick={() => setSelectedDetailSale(sale)}
-                              className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border dark:border-slate-700 hover:border-primary-400 dark:hover:border-primary-500 cursor-pointer transition-all active:scale-[0.98]"
+                              className={`p-3 rounded-lg border transition-all active:scale-[0.98] cursor-pointer ${
+                                isClosed 
+                                ? 'bg-slate-100 dark:bg-slate-900/20 border-slate-200 dark:border-slate-800 opacity-60' 
+                                : 'bg-slate-50 dark:bg-slate-900/50 border-slate-300 dark:border-slate-700 hover:border-primary-400 dark:hover:border-primary-500'
+                              }`}
                             >
                               <div className="flex justify-between items-start mb-2">
                                 <div>
                                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                                    sale.status_label === 'Venda' ? 'bg-green-100 text-green-700' : 
-                                    (sale.status_label === 'Condicional' || (sale.status_label || '').toLowerCase().includes('consignad')) ? 'bg-amber-100 text-amber-700' :
-                                    sale.status_label === 'Convertida' ? 'bg-blue-100 text-blue-700' :
-                                    sale.status_label === 'Baixa' ? 'bg-orange-100 text-orange-700' :
+                                    status === 'Venda' ? 'bg-green-100 text-green-700' : 
+                                    (status === 'Condicional' || status.toLowerCase().includes('consignad')) ? 'bg-amber-100 text-amber-700' :
+                                    status === 'Convertida' ? 'bg-blue-100 text-blue-700' :
+                                    status === 'Baixa' ? 'bg-orange-100 text-orange-700' :
                                     'bg-red-100 text-red-700'
-                                  }`}>{sale.status_label} #{sale.code}</span>
+                                  }`}>{status} #{sale.code}</span>
+                                  {status === 'Convertida' && <span className="ml-2 text-[9px] font-bold text-blue-600 uppercase">Ver nova venda no extrato</span>}
                                   <p className="text-[10px] text-slate-400 mt-1">{new Date(sale.created_at).toLocaleString()}</p>
                                 </div>
                                 <div className="text-right">
-                                  <p className="font-bold text-slate-800 dark:text-white">{formatCurrency(sale.total_value)}</p>
-                                  {remaining > 0 && <p className="text-[10px] font-bold text-red-500">Restante: {formatCurrency(remaining)}</p>}
-                                  {remaining <= 0 && sale.total_value > 0 && <p className="text-[10px] font-bold text-green-500 uppercase">Pago</p>}
+                                  <p className={`font-bold ${isClosed ? 'text-slate-500 line-through' : 'text-slate-800 dark:text-white'}`}>{formatCurrency(sale.total_value)}</p>
+                                  {!isClosed && remaining > 0 && <p className="text-[10px] font-bold text-red-500">Restante: {formatCurrency(remaining)}</p>}
+                                  {!isClosed && remaining <= 0 && sale.total_value > 0 && <p className="text-[10px] font-bold text-green-500 uppercase">Pago</p>}
+                                  {isClosed && <p className="text-[10px] font-bold text-slate-400 uppercase">Encerrada</p>}
                                 </div>
                               </div>
                               

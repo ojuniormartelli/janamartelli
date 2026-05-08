@@ -205,7 +205,7 @@ export const Sales: React.FC = () => {
         const labelLower = label.toLowerCase();
         
         const isVenda = label === 'Venda' || label === 'Devolução';
-        const isCondicional = s.status_label?.trim().toLowerCase().includes('condicional') || labelLower.includes('consignad') || label === 'Orçamento' || label === 'Convertida';
+        const isCondicional = (s.status_label?.trim().toLowerCase().includes('condicional') || labelLower.includes('consignad') || label === 'Orçamento') && label !== 'Convertida';
         const isBaixa = label === 'Baixa' || label === 'Perda';
 
         let tabMatch = (activeTab === 'sales' && isVenda) ||
@@ -227,7 +227,7 @@ export const Sales: React.FC = () => {
         conditionals: sales.filter(s => {
             const l = (s.status_label || '').trim();
             const lLower = l.toLowerCase();
-            return s.status_label?.trim().toLowerCase().includes('condicional') || lLower.includes('consignad') || l === 'Orçamento' || l === 'Convertida';
+            return (s.status_label?.trim().toLowerCase().includes('condicional') || lLower.includes('consignad') || l === 'Orçamento') && l !== 'Convertida';
         }).length,
         losses: sales.filter(s => {
             const l = (s.status_label || '').trim();
