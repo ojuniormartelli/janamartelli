@@ -81,9 +81,11 @@ export const Clients: React.FC = () => {
         const processed = (clientsData || []).map(client => {
             const clientSales = (salesData || []).filter(s => s.client_id === client.id);
             const debt = clientSales.reduce((acc, sale) => {
-                // Ignore sales that are converted, returned or losses
+                // Ignore sales that are fully paid, converted, returned or losses
                 const status = (sale.status_label || '').trim();
-                if (status === 'Convertida' || status === 'Devolução' || status === 'Baixa' || status === 'Perda') {
+                const isPaid = sale.payment_status === 'paid';
+                
+                if (isPaid || status === 'Convertida' || status === 'Devolução' || status === 'Baixa' || status === 'Perda') {
                     return acc;
                 }
                 
@@ -645,14 +647,15 @@ export const Clients: React.FC = () => {
                         {clientHistory.map(sale => {
                           const status = (sale.status_label || '').trim();
                           const isClosed = status === 'Convertida' || status === 'Devolução' || status === 'Baixa' || status === 'Perda';
-                          const remaining = isClosed ? 0 : Number(sale.total_value) - (sale.paid_amount || 0);
+                          const isPaid = sale.payment_status === 'paid';
+                          const remaining = (isClosed || isPaid) ? 0 : Number(sale.total_value) - (sale.paid_amount || 0);
                           
                           return (
                             <div 
                               key={sale.id} 
                               onClick={() => setSelectedDetailSale(sale)}
                               className={`p-3 rounded-lg border transition-all active:scale-[0.98] cursor-pointer ${
-                                isClosed 
+                                isClosed || isPaid
                                 ? 'bg-slate-100 dark:bg-slate-900/20 border-slate-200 dark:border-slate-800 opacity-60' 
                                 : 'bg-slate-50 dark:bg-slate-900/50 border-slate-300 dark:border-slate-700 hover:border-primary-400 dark:hover:border-primary-500'
                               }`}
@@ -670,10 +673,11 @@ export const Clients: React.FC = () => {
                                   <p className="text-[10px] text-slate-400 mt-1">{new Date(sale.created_at).toLocaleString()}</p>
                                 </div>
                                 <div className="text-right">
-                                  <p className={`font-bold ${isClosed ? 'text-slate-500 line-through' : 'text-slate-800 dark:text-white'}`}>{formatCurrency(sale.total_value)}</p>
-                                  {!isClosed && remaining > 0 && <p className="text-[10px] font-bold text-red-500">Restante: {formatCurrency(remaining)}</p>}
-                                  {!isClosed && remaining <= 0 && sale.total_value > 0 && <p className="text-[10px] font-bold text-green-500 uppercase">Pago</p>}
+                                  <p className={`font-bold ${(isClosed || isPaid) ? 'text-slate-500 line-through' : 'text-slate-800 dark:text-white'}`}>{formatCurrency(sale.total_value)}</p>
+                                  {!(isClosed || isPaid) && remaining > 0 && <p className="text-[10px] font-bold text-red-500">Restante: {formatCurrency(remaining)}</p>}
+                                  {!(isClosed || isPaid) && remaining <= 0 && sale.total_value > 0 && <p className="text-[10px] font-bold text-green-500 uppercase">Pago</p>}
                                   {isClosed && <p className="text-[10px] font-bold text-slate-400 uppercase">Encerrada</p>}
+                                  {isPaid && !isClosed && <p className="text-[10px] font-bold text-green-500 uppercase">Pago</p>}
                                 </div>
                               </div>
                               

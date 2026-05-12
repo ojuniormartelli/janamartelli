@@ -40,7 +40,7 @@ export const Sales: React.FC = () => {
       const { data, error } = await supabase
         .from('vendas')
         .select(`
-          id, code, created_at, total_value, status_label, payment_status, payment_method, observacoes, client_id,
+          id, code, created_at, total_value, status_label, payment_status, payment_method, observacoes, client_id, payment_details,
           client:clients(full_name, cpf, address, phone, email), 
           items:venda_itens(*, product_variation:estoque_tamanhos(*, products(*))),
           payments:venda_pagamentos(*)
@@ -337,14 +337,31 @@ export const Sales: React.FC = () => {
                                     </td>
                                     <td className="text-right dark:text-white font-mono">
                                         {formatCurrency(item.unit_price * item.quantity)}
-                                        <div className="text-[10px] text-slate-400">un: {formatCurrency(item.unit_price)}</div>
+                                        <div className="text-[10px] text-slate-400 flex flex-col">
+                                            <span>un: {formatCurrency(item.unit_price)}</span>
+                                            {item.product_variation?.price_sale !== item.unit_price && (
+                                                <span className="line-through text-[8px] opacity-70 italic">orig: {formatCurrency(item.product_variation?.price_sale)}</span>
+                                            )}
+                                        </div>
                                     </td>
                                 </tr>
                             ))}</tbody>
                         </table>
-                        <div className="text-right border-t pt-4 dark:border-slate-700">
-                            <p className="text-sm text-slate-500 dark:text-slate-400">Total da Venda</p>
-                            <p className="text-2xl font-black text-slate-800 dark:text-white">{formatCurrency(selectedSale.total_value)}</p>
+                        <div className="text-right border-t pt-4 dark:border-slate-700 space-y-1">
+                            {selectedSale.payment_details?.discount_applied > 0 && (
+                                <>
+                                    <div className="flex justify-end gap-3 text-sm">
+                                        <span className="text-slate-500">Subtotal:</span>
+                                        <span className="dark:text-slate-300 font-mono">{formatCurrency(Number(selectedSale.total_value) + Number(selectedSale.payment_details.discount_applied))}</span>
+                                    </div>
+                                    <div className="flex justify-end gap-3 text-sm">
+                                        <span className="text-slate-500 font-bold">Desconto na Venda:</span>
+                                        <span className="text-red-500 font-bold font-mono">-{formatCurrency(selectedSale.payment_details.discount_applied)}</span>
+                                    </div>
+                                </>
+                            )}
+                            <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-black pt-2">Total da Venda</p>
+                            <p className="text-3xl font-black text-slate-800 dark:text-white leading-tight">{formatCurrency(selectedSale.total_value)}</p>
                             
                             {(selectedSale as any).paid_amount > 0 && (
                                 <div className="mt-2 text-right">

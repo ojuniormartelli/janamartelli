@@ -139,7 +139,9 @@ export const POS: React.FC = () => {
         }
       });
 
-      const unifiedProducts = Array.from(groupedMap.values()).sort((a, b) => a.nome.localeCompare(b.nome));
+      const unifiedProducts = Array.from(groupedMap.values()).sort((a, b) => 
+        a.nome.trim().localeCompare(b.nome.trim(), 'pt-BR', { sensitivity: 'base' })
+      );
       setProducts(unifiedProducts);
     }
     
@@ -340,6 +342,14 @@ export const POS: React.FC = () => {
     }
     
     if (transactionType === 'sale' && !isPendingSale && method) {
+        // Record the payment record for debt calculation logic
+        await supabase.from('venda_pagamentos').insert({
+            sale_id: sale.id,
+            amount: finalTotal,
+            payment_method: method.name,
+            date: getLocalDate()
+        });
+
         const { data: defaultAccount } = await supabase.from('bank_accounts').select('*').eq('is_default', true).single();
         const accountId = defaultAccount ? defaultAccount.id : (await supabase.from('bank_accounts').select('id').limit(1).single()).data?.id;
 
