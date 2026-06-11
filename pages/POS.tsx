@@ -113,7 +113,7 @@ export const POS: React.FC = () => {
   };
 
   const loadData = async () => {
-    const { data: prodData } = await supabase.from('products').select('*').eq('active', true);
+    const { data: prodData } = await supabase.from('products').select('*, product_images(*)').eq('active', true);
     const { data: varData } = await supabase.from('estoque_tamanhos').select('*').gt('quantity', 0);
     const { data: clientData } = await supabase.from('clients').select('*').order('full_name');
     const { data: payMethods } = await supabase.from('payment_methods').select('*').eq('active', true);
@@ -124,6 +124,7 @@ export const POS: React.FC = () => {
     if (prodData && varData) {
       const rawProducts = prodData.map(p => ({
         ...p,
+        images: p.product_images || [],
         variations: varData.filter(v => v.product_id === p.id)
       })).filter(p => p.variations && p.variations.length > 0);
 
@@ -134,6 +135,9 @@ export const POS: React.FC = () => {
         if (groupedMap.has(normalizedName)) {
             const existing = groupedMap.get(normalizedName)!;
             existing.variations = [...(existing.variations || []), ...(p.variations || [])];
+            if (!existing.images || existing.images.length === 0) {
+                existing.images = p.images;
+            }
         } else {
             groupedMap.set(normalizedName, { ...p });
         }
@@ -580,9 +584,23 @@ export const POS: React.FC = () => {
                 </div>
                 <div className="p-6 space-y-4">
                     <div className="text-center">
-                        <div className="w-16 h-16 bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 rounded-2xl flex items-center justify-center mx-auto mb-3 font-black text-2xl border-2 border-primary-200 dark:border-primary-800">
-                            {selectedVariation.variation.size}
-                        </div>
+                        {selectedVariation.product.images && selectedVariation.product.images.length > 0 ? (
+                            <div className="w-20 h-20 rounded-2xl bg-slate-100 dark:bg-slate-700/50 border dark:border-slate-600 flex items-center justify-center overflow-hidden mx-auto mb-3 relative shadow-md">
+                                <img 
+                                    src={selectedVariation.product.images.find((img: any) => img.is_cover)?.public_url || selectedVariation.product.images[0].public_url} 
+                                    alt={selectedVariation.product.nome}
+                                    referrerPolicy="no-referrer"
+                                    className="w-full h-full object-cover"
+                                />
+                                <div className="absolute right-1 bottom-1 bg-black/60 text-white font-bold text-[10px] px-1.5 py-0.5 rounded-md leading-none">
+                                    {selectedVariation.variation.size}
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="w-16 h-16 bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 rounded-2xl flex items-center justify-center mx-auto mb-3 font-black text-2xl border-2 border-primary-200 dark:border-primary-800">
+                                {selectedVariation.variation.size}
+                            </div>
+                        )}
                         <h4 className="text-xl font-bold dark:text-white leading-tight">{capitalizeName(selectedVariation.product.nome)}</h4>
                         <p className="text-sm text-slate-500 font-medium uppercase mt-1">{capitalizeName(selectedVariation.variation.model_variant)}</p>
                     </div>

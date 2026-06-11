@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase, resetDatabaseConfig, isUsingEnv } from '../supabaseClient';
-import { fixSequencesSQL, fullInstallScript, patchSizesScript, patchCrediarioScript, patchSecurityScript, patchClientsActiveScript } from '../utils/database.sql';
+import { fixSequencesSQL, fullInstallScript, patchSizesScript, patchCrediarioScript, patchSecurityScript, patchClientsActiveScript, patchProductImagesScript } from '../utils/database.sql';
 import { Profile, PaymentMethod, ProductSize, StoreSettings } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { 
@@ -761,6 +761,19 @@ export const Settings: React.FC = () => {
                             className="w-full py-3 bg-primary-600 text-white rounded-xl font-bold hover:bg-primary-700 shadow-lg flex justify-center items-center"
                           >
                               <Copy size={18} className="mr-2"/> Copiar Script de Inativação
+                          </button>
+                      </div>
+                      <div className="p-6 bg-slate-50 dark:bg-slate-900/50 rounded-xl border-2 border-slate-200 dark:border-slate-700">
+                          <h4 className="font-bold text-slate-800 dark:text-white flex items-center gap-2 mb-2"><ImageIcon size={18} className="text-emerald-500"/> Imagens e Vitrine (Fase 1)</h4>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Cria os campos de vitrine e a tabela product_images para suportar uploads de imagens.</p>
+                          <button 
+                            onClick={() => {
+                                navigator.clipboard.writeText(patchProductImagesScript);
+                                alert("Script SQL copiado! Cole no SQL Editor do Supabase e execute.");
+                            }} 
+                            className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 shadow-lg flex justify-center items-center"
+                          >
+                              <Copy size={18} className="mr-2"/> Copiar Script de Imagens
                           </button>
                       </div>
                       <div className="p-6 bg-slate-50 dark:bg-slate-900/50 rounded-xl border-2 border-slate-200 dark:border-slate-700">

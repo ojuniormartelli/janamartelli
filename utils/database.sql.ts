@@ -73,6 +73,10 @@ CREATE TABLE public.products (
   descricao TEXT,
   categoria TEXT,
   active BOOLEAN DEFAULT TRUE,
+  slug TEXT,
+  short_description TEXT,
+  published BOOLEAN DEFAULT TRUE,
+  display_order INTEGER DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -151,6 +155,17 @@ CREATE TABLE public.venda_itens (
   original_cost DECIMAL(10,2)
 );
 
+CREATE TABLE public.product_images (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  product_id UUID REFERENCES public.products(id) ON DELETE CASCADE,
+  storage_path TEXT NOT NULL,
+  public_url TEXT,
+  alt_text TEXT,
+  is_cover BOOLEAN DEFAULT FALSE,
+  sort_order INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 CREATE TABLE public.bank_accounts (
   id SERIAL PRIMARY KEY,
   name TEXT NOT NULL,
@@ -179,6 +194,8 @@ ALTER TABLE clients ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public Access Clients" ON clients FOR ALL USING (true) WITH CHECK (true);
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public Access Products" ON products FOR ALL USING (true) WITH CHECK (true);
+ALTER TABLE product_images ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public Access Product Images" ON product_images FOR ALL USING (true) WITH CHECK (true);
 ALTER TABLE estoque_tamanhos ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public Access Stock" ON estoque_tamanhos FOR ALL USING (true) WITH CHECK (true);
 ALTER TABLE vendas ENABLE ROW LEVEL SECURITY;
@@ -319,6 +336,55 @@ export const patchClientsActiveScript = `-- ====================================
 
 ALTER TABLE public.clients 
 ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE;
+
+NOTIFY pgrst, 'reload schema';
+`;
+
+export const patchProductImagesScript = `-- =================================================================
+-- PATCH PARA IMAGENS DE PRODUTOS E CONFIGURAÇÃO DA VITRINE (FASE 1.1)
+-- =================================================================
+
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+ALTER TABLE public.products 
+ADD COLUMN IF NOT EXISTS slug TEXT,
+ADD COLUMN IF NOT EXISTS short_description TEXT,
+ADD COLUMN IF NOT EXISTS published BOOLEAN DEFAULT TRUE,
+ADD COLUMN IF NOT EXISTS display_order INTEGER DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS public.product_images (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  product_id UUID REFERENCES public.products(id) ON DELETE CASCADE,
+  storage_path TEXT NOT NULL,
+  public_url TEXT,
+  alt_text TEXT,
+  is_cover BOOLEAN DEFAULT FALSE,
+  sort_order INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Garantir que product_id é NOT NULL de forma segura
+DELETE FROM public.product_images WHERE product_id IS NULL;
+ALTER TABLE public.product_images ALTER COLUMN product_id SET NOT NULL;
+
+-- Índices recomendados para otimização
+CREATE INDEX IF NOT EXISTS idx_product_images_product_id ON public.product_images(product_id);
+CREATE INDEX IF NOT EXISTS idx_product_images_product_id_sort_order ON public.product_images(product_id, sort_order);
+
+-- Regra única para apenas uma capa (is_cover = true) por produto
+CREATE UNIQUE INDEX IF NOT EXISTS uq_product_images_single_cover ON public.product_images(product_id) WHERE (is_cover = TRUE);
+
+-- Configuração da segurança RLS
+ALTER TABLE public.product_images ENABLE ROW LEVEL SECURITY;
+
+-- Excluir políticas antigas genéricas se existirem
+DROP POLICY IF EXISTS "Public Access Product Images" ON public.product_images;
+DROP POLICY IF EXISTS "Allow Select Product Images" ON public.product_images;
+DROP POLICY IF EXISTS "Allow Admin Product Images" ON public.product_images;
+
+-- Políticas de acesso específicas e robustas
+CREATE POLICY "Allow Select Product Images" ON public.product_images FOR SELECT USING (true);
+CREATE POLICY "Allow Admin Product Images" ON public.product_images FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 NOTIFY pgrst, 'reload schema';
 `;

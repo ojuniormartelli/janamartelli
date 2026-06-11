@@ -38,6 +38,22 @@ export interface Product {
   categoria: string;
   active: boolean;
   variations?: ProductVariation[];
+  slug?: string;
+  short_description?: string;
+  published?: boolean;
+  display_order?: number;
+  images?: ProductImage[];
+}
+
+export interface ProductImage {
+  id: string;
+  product_id: string;
+  storage_path: string;
+  public_url?: string;
+  alt_text?: string;
+  is_cover: boolean;
+  sort_order: number;
+  created_at?: string;
 }
 
 export interface ProductVariation {
