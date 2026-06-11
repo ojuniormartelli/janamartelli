@@ -39,6 +39,8 @@ export const Inventory: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [imageMethod, setImageMethod] = useState<'file' | 'url'>('file');
+  const [imageLinkUrl, setImageLinkUrl] = useState('');
 
   const fetchData = async () => {
     setLoading(true);
@@ -308,24 +310,73 @@ export const Inventory: React.FC = () => {
       .replace(/-+/g, '-');
   };
 
+  const handleSaveImageLink = async () => {
+    if (!imageLinkUrl || !editingProduct) return;
+    if (!imageLinkUrl.startsWith('http://') && !imageLinkUrl.startsWith('https://')) {
+      alert('Por favor, insira uma URL válida iniciando com http:// ou https://');
+      return;
+    }
+    
+    try {
+      const currentImgCount = editingProduct.images?.length || 0;
+      const { data: imgRecord, error: dbError } = await supabase
+        .from('product_images')
+        .insert({
+          product_id: editingProduct.id,
+          storage_path: 'via-url',
+          public_url: imageLinkUrl,
+          alt_text: 'Imagem via Link',
+          is_cover: currentImgCount === 0,
+          sort_order: currentImgCount
+        })
+        .select()
+        .single();
+
+      if (dbError) throw dbError;
+
+      setEditingProduct(prev => {
+        if (!prev) return null;
+        const updated = [...(prev.images || []), imgRecord];
+        return { ...prev, images: updated };
+      });
+
+      setImageLinkUrl('');
+      fetchData();
+    } catch (err: any) {
+      alert("Erro ao salvar link da imagem: " + err.message);
+    }
+  };
+
   const handleUploadImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || !editingProduct) return;
 
     setUploadingImage(true);
     try {
+      // Tenta criar preventivamente o bucket 'products' de forma silenciosa
+      try {
+        await supabase.storage.createBucket('products', { public: true });
+      } catch (eCheck) {
+        console.warn("Nota: Não foi possível criar bucket automaticamente (permissão de anon key restrita, o que é esperado).", eCheck);
+      }
+
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const fileExt = file.name.split('.').pop() || 'jpg';
         const sanitizedFileName = `${Date.now()}-${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
         const filePath = `${editingProduct.id}/${sanitizedFileName}`;
 
-        // Upload directly to bucket 'products'
+        // Upload diretamente para o bucket 'products'
         const { error: uploadError } = await supabase.storage
           .from('products')
           .upload(filePath, file, { cacheControl: '3600', upsert: false });
 
-        if (uploadError) throw uploadError;
+        if (uploadError) {
+          if (uploadError.message?.toLowerCase().includes('bucket not found') || (uploadError as any).statusCode === '404' || (uploadError as any).status === 404) {
+            throw new Error("O bucket 'products' não foi encontrado no Supabase Storage. Por favor, acesse o painel do Supabase, clique em 'Storage' e crie um bucket público chamado 'products'. Como alternativa rápida, você também pode usar a aba 'Inserir Link (URL)' acima para cadastrar imagens usando links diretos.");
+          }
+          throw uploadError;
+        }
 
         // Get public URL
         const { data: urlData } = supabase.storage
@@ -958,34 +1009,72 @@ export const Inventory: React.FC = () => {
                         <ImageIcon size={14} /> Imagens do Produto
                     </h4>
 
-                    {/* UPLOAD FILE ZONE */}
-                    <div className="relative">
-                        <input 
-                            type="file" 
-                            accept="image/*" 
-                            multiple 
-                            id="product-images-upload" 
-                            className="hidden" 
-                            onChange={handleUploadImages} 
-                            disabled={uploadingImage}
-                        />
-                        <label 
-                            htmlFor="product-images-upload" 
-                            className={`flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-primary-500 rounded-lg cursor-pointer transition-colors ${uploadingImage ? 'opacity-50 pointer-events-none' : ''}`}
+                    {/* ENTRADA DE IMAGEM (UPLOAD OU LINK) */}
+                    <div className="space-y-3">
+                      <div className="flex bg-slate-100 dark:bg-slate-900 rounded-lg p-1 text-[11px]">
+                        <button 
+                          type="button" 
+                          onClick={() => setImageMethod('file')}
+                          className={`flex-1 py-1 px-2 rounded font-bold transition-all ${imageMethod === 'file' ? 'bg-white dark:bg-slate-800 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'}`}
                         >
-                            {uploadingImage ? (
-                                <>
-                                    <Loader className="animate-spin text-primary-500 mb-2" size={24} />
-                                    <span className="text-xs font-bold text-slate-600 dark:text-slate-300">Enviando imagens...</span>
-                                </>
-                            ) : (
-                                <>
-                                    <Upload className="text-slate-400 mb-2" size={24} />
-                                    <span className="text-xs font-bold text-slate-800 dark:text-white">Selecionar Imagens</span>
-                                    <span className="text-[10px] text-slate-400 mt-1">PNG, JPG ou WEBP (Permite vários)</span>
-                                </>
-                            )}
-                        </label>
+                          Fazer Upload de Arquivo
+                        </button>
+                        <button 
+                          type="button" 
+                          onClick={() => setImageMethod('url')}
+                          className={`flex-1 py-1 px-2 rounded font-bold transition-all ${imageMethod === 'url' ? 'bg-white dark:bg-slate-800 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'}`}
+                        >
+                          Inserir Link da Imagem (URL)
+                        </button>
+                      </div>
+
+                      {imageMethod === 'file' ? (
+                        <div className="relative">
+                            <input 
+                                type="file" 
+                                accept="image/*" 
+                                multiple 
+                                id="product-images-upload" 
+                                className="hidden" 
+                                onChange={handleUploadImages} 
+                                disabled={uploadingImage}
+                            />
+                            <label 
+                                htmlFor="product-images-upload" 
+                                className={`flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-primary-500 rounded-lg cursor-pointer transition-colors ${uploadingImage ? 'opacity-50 pointer-events-none' : ''}`}
+                            >
+                                {uploadingImage ? (
+                                    <>
+                                        <Loader className="animate-spin text-primary-500 mb-2" size={24} />
+                                        <span className="text-xs font-bold text-slate-600 dark:text-slate-300">Enviando imagens...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Upload className="text-slate-400 mb-2" size={24} />
+                                        <span className="text-xs font-bold text-slate-800 dark:text-white">Selecionar Imagens</span>
+                                        <span className="text-[10px] text-slate-400 mt-1">PNG, JPG ou WEBP (Permite vários)</span>
+                                    </>
+                                )}
+                            </label>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2 p-3 border rounded-lg dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/10">
+                            <input 
+                                type="url"
+                                placeholder="Coloque a URL da imagem aqui..."
+                                value={imageLinkUrl}
+                                onChange={e => setImageLinkUrl(e.target.value)}
+                                className="flex-1 p-2 border text-xs rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white bg-white h-9"
+                            />
+                            <button 
+                                type="button"
+                                onClick={handleSaveImageLink}
+                                className="px-3 bg-primary-600 text-white font-bold rounded text-xs hover:bg-primary-700 h-9 shrink-0 flex items-center justify-center shadow"
+                            >
+                                Adicionar
+                            </button>
+                        </div>
+                      )}
                     </div>
 
                     {/* LISTA DE IMAGENS */}

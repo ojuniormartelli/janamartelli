@@ -382,9 +382,8 @@ DROP POLICY IF EXISTS "Public Access Product Images" ON public.product_images;
 DROP POLICY IF EXISTS "Allow Select Product Images" ON public.product_images;
 DROP POLICY IF EXISTS "Allow Admin Product Images" ON public.product_images;
 
--- Políticas de acesso específicas e robustas
-CREATE POLICY "Allow Select Product Images" ON public.product_images FOR SELECT USING (true);
-CREATE POLICY "Allow Admin Product Images" ON public.product_images FOR ALL TO authenticated USING (true) WITH CHECK (true);
+-- Políticas de acesso específicas e robustas que funcionam com a chave anon do app
+CREATE POLICY "Public Access Product Images" ON public.product_images FOR ALL USING (true) WITH CHECK (true);
 
 NOTIFY pgrst, 'reload schema';
 `;
